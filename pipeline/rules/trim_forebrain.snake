@@ -1,0 +1,48 @@
+
+""" trim forebrain fastqs 
+    the sequence core pretrimmed the medulla and hypothalamus libraries
+    to remove the illumina adapters. The original seqeuences are
+    unrecoverable. Thus the braintherest fqs need to be trimmed prior to 
+    running the pipeline to make everything comparable. 
+"""
+
+def select_forebrain(wildcards):
+   if "brainrest" in wildcards.fb_fastq:
+     fq = os.path.basename(wildcards.fb_fastq)
+     prefix = wildcards.data + "/raw_data/brainrest/untrimmed/"
+     r1 = prefix + fq + "_R1_001.fastq.gz"
+     r2 = prefix + fq + "_R2_001.fastq.gz"
+     lst = [r1, r2] 
+     return lst
+
+rule trim_fq:
+   """ 
+   trim R1 and R2 sequences, discarding reads < 35nt after trimming 
+   cutadapt v1.8.3
+   """
+
+   input:
+     select_forebrain
+   output:
+     FQ1 = "{data}/raw_data/{fb_fastq,b.+}_R1_001.fastq.gz",
+     FQ2 = "{data}/raw_data/{fb_fastq,b.+}_R2_001.fastq.gz",
+   params:
+     job_name = "trim_fb",
+     memory = "select[mem>12] rusage[mem=12]",
+   log:
+     "{data}/raw_data/logs/{fb_fastq}_trimm.txt"
+   message:
+     "trimming forebrain "
+   resources: all_threads=1
+   shell:
+     """
+     module load python3
+     cutadapt \
+       -a AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC \
+       -A AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT \
+       -m 35 \
+       -o {output.FQ1} \
+       -p {output.FQ2} \
+       {input}
+     module unload python3
+     """

@@ -1,0 +1,100 @@
+import os 
+
+def _get_samples(wildcards):
+  fq_name = os.path.basename(wildcards.fastq) 
+  return fq_name.split("_L00")[0] 
+
+rule stats_filtered:
+  input:
+    "{data}/vcf/recalibrated/filtered/dp10/{fastq}_hardfiltered_2x_snps.vcf.gz"
+  output:
+    "{data}/vcf/recalibrated/stats/filtered/{fastq}_stats.txt"
+  params:
+    job_name = "stats_vcfs",
+    memory = "select[mem>40] rusage[mem=40]",
+  log:
+    "{data}/vcf/recalibrated/stats/logs/filtered/{fastq}"
+  message:
+    "getting stats for filtered vcfs"
+  resources: all_threads=1
+  shell:
+    """
+    module load bcftools
+    bcftools stats {input} > {output}
+    module unload bcftools
+    """
+
+rule stats_uncalibrated:
+  input:
+    "{data}/vcf/uncalibrated/filtered/dp10/{fastq}_filtered.vcf.gz"
+  output:
+    "{data}/vcf/uncalibrated/stats/filtered/{fastq}_stats.txt"
+  params:
+    job_name = "stats_vcfs",
+    memory = "select[mem>40] rusage[mem=40]",
+  log:
+    "{data}/vcf/uncalibrated/stats/logs/{fastq}"
+  message:
+    "getting stats for filtered vcfs"
+  resources: all_threads=1
+  shell:
+    """
+    module load bcftools
+    bcftools stats {input} > {output}
+    module unload bcftools
+    """
+
+rule single_vcfs_filtered:
+  input:
+    merged_vcf =
+    "{data}/vcf/variant_allele_counts_by_strand/annotated_variants.vcf.gz",
+  output:
+    "{data}/vcf/recalibrated/filtered/dp10/{fastq}_hardfiltered_2x_snps.vcf.gz"
+  params:
+    vcfs = _get_samples,
+    job_name = "filter_vcfs",
+    memory = "select[mem>40] rusage[mem=40]",
+  log:
+    "{data}/vcf/recalibrated/logs/single_vcf_split/{fastq}.txt"
+  message:
+    "extract single vcfs"
+  resources: all_threads=1
+  shell:
+    """
+    java -jar {GATK} \
+       -T SelectVariants \
+       -V {input.merged_vcf} \
+       -o {output} \
+       -R {GENOME} \
+       -sn {params.vcfs} \
+       -select "vc.getGenotype('{params.vcfs}').getDP() > 10"
+   
+    """
+
+rule single_vcfs_uncalibrated:
+  input:
+    merged_vcf =
+    "{data}/vcf/uncalibrated/merged_uncalibrated_filtered.vcf.gz",
+  output:
+    "{data}/vcf/uncalibrated/filtered/dp10/{fastq}_filtered.vcf.gz"
+  params:
+    vcfs = _get_samples,
+    job_name = "filter_vcfs",
+    memory = "select[mem>40] rusage[mem=40]",
+  log:
+    "{data}/vcf/uncalibrated/logs/single_vcf_split/{fastq}.txt"
+  message:
+    "extract single vcfs"
+  resources: all_threads=1
+  shell:
+    """
+    java -jar {GATK} \
+       -T SelectVariants \
+       -V {input.merged_vcf} \
+       -o {output} \
+       -R {GENOME} \
+       -sn {params.vcfs} \
+       -select "vc.getGenotype('{params.vcfs}').getDP() > 10"
+   
+    """
+

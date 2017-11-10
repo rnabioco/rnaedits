@@ -1,0 +1,46 @@
+
+""" rules to QC RNA-Seq libs """
+
+def define_region(wildcards):
+    fq = wildcards.fq_basename
+    prefix = os.path.join(wildcards.data, "raw_data")
+
+    if fq.startswith("B"):
+      outdir = "brainrest/"
+    elif "H" in fq:
+      outdir = "hypothalamus/"
+    else:
+      outdir = "medulla/" 
+    prefix = prefix + "/" + outdir
+    outfiles = [prefix + fq + "_R1_001.fastq.gz",
+                prefix + fq + "_R2_001.fastq.gz"]
+    
+    return outfiles
+
+rule fastqc:
+  input: define_region
+  output:
+    os.path.join("{data}", "qc_stats", "fastqc", "{fq_basename}" +  "_R1_001_fastqc/summary.txt"),
+    os.path.join("{data}", "qc_stats", "fastqc", "{fq_basename}" + "_R2_001_fastqc/summary.txt")
+  params:
+    out_dir = os.path.join("{data}", "qc_stats", "fastqc"),
+    job_name = "fastqc.{fq_basename}",
+    memory = "select[mem>16] rusage[mem=16]",
+  log:
+    os.path.join("{data}", "qc_stats", "logs", "fastqc", "{fq_basename}.txt")
+  message:
+    "fastqc analysis of {wildcards.fq_basename} "
+  threads:
+    6
+  resources: all_threads=6
+  shell:
+    """
+    module load fastqc
+    mkdir -p {params.out_dir}
+    fastqc \
+      -t {threads} \
+      -f fastq \
+      -o {params.out_dir} \
+      {input}
+    module unload fastqc
+    """

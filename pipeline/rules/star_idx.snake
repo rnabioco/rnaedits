@@ -1,0 +1,31 @@
+
+""" rules to generate STAR indicies for two pass mapping """
+
+rule star_idx:
+  input:
+    {GENOME} 
+  output:
+    "{GENOME_DIR}/Genome"
+  params:
+    job_name = "star_idx",
+    memory = "select[mem>65] rusage[mem=65]",
+  log:
+    "{GENOME_DIR}/logs/" 
+  message:
+    "building star index "
+  threads:
+    24
+  shell:
+    """
+    module load star
+    STAR --runMode genomeGenerate \
+      --genomeDir {GENOME_DIR}  \
+      --genomeFastaFiles {GENOME} \
+      --runThreadN {threads} \
+      --sjdbGTFfile {TRANSCRIPTS} \
+      --sjdbOverhang 125 \
+      --limitGenomeGenerateRAM 60000000000
+    module unload star
+    """
+
+

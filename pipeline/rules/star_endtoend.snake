@@ -1,0 +1,41 @@
+
+""" rules for endtoend alignment """ 
+
+
+rule star_endtoend:
+   input:
+     FQ1 = "{data}/raw_data/{fastq}_R1_001.fastq.gz",
+     FQ2 = "{data}/raw_data/{fastq}_R2_001.fastq.gz",
+     junctions = expand("{data}/star/{fastq}_SJ.out.tab",
+       data=DATA, fastq=FASTQ)
+   output:
+     protected("{data}/star/endtoend/{fastq}_e2e_Aligned.sortedByCoord.out.bam")
+   params:
+     job_name = "star_endtoend",
+     out = "{data}/star/endtoend/{fastq}_e2e_",
+     memory = "select[mem>60] rusage[mem=60]",
+   log:
+     "{data}/star/logs/{fastq}_endtoend.txt"
+   message:
+     "running second pass star alignments "
+   threads:
+     12
+   resources: all_threads=12
+   shell:
+     """
+     module load star
+     STAR \
+       --genomeDir {GENOME_DIR}  \
+       --runThreadN {threads} \
+       --readFilesIn {input.FQ1} {input.FQ2} \
+       --outSAMtype BAM SortedByCoordinate \
+       --readFilesCommand gunzip -c \
+       --outFileNamePrefix {params.out} \
+       --sjdbFileChrStartEnd {input.junctions} \
+       --limitSjdbInsertNsj 1250000 \
+       --outSAMattributes NH HI AS nM MD \
+       --alignEndsType EndToEnd 
+
+     module unload star
+     """
+

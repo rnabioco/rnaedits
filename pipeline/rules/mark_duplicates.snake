@@ -1,0 +1,90 @@
+
+""" rules to mark duplicates and sort bam """
+
+def _get_sample(wildcards):
+    
+    wc = wildcards.fastq
+    splt = wc.split("/")
+    fqname = splt[len(splt) - 1]
+    fqsample = fqname.split("_L00")[0]
+    return fqsample
+
+def _get_fastq(wildcards):
+    
+    wc = wildcards.fastq
+    splt = wc.split("/")
+    fqname = splt[len(splt) - 1]
+    return fqname 
+
+rule mark_duplicates_and_split:
+  input:
+    bam = "{data}/star/{fastq}_2pass_Aligned.sortedByCoord.out.bam",
+    seq_dict = GENOME.replace(".fa", ".dict")
+  output:
+    bam = "{data}/star/{fastq}_split.bam",
+    bai = "{data}/star/{fastq}_split.bam.bai"
+  params:
+    job_name = "mark_dups",
+    memory = "select[mem>16] rusage[mem=16]",
+    sample = _get_sample,
+    fastq = _get_fastq,
+    tmp1 = "{data}/star/{fastq}_readgroups.bam",
+    tmp2 = "{data}/star/{fastq}_duplicated.bam",
+
+  log:
+    "{data}/star/logs/{fastq}_duplicate_marking.txt"
+  message:
+    "marking duplicates  "
+  shell:
+    """
+      java -Xmx10g -jar {PICARD} \
+        AddOrReplaceReadGroups \
+        I={input.bam} \
+        O='{params.tmp1}' \
+        SO=coordinate RGID={params.fastq} RGLB={params.fastq} \
+        RGPL=illumina \
+        RGPU=2500 \
+        RGSM={params.sample} \
+        VALIDATION_STRINGENCY=SILENT
+
+      java -Xmx10g -jar {PICARD} \
+        MarkDuplicates  \
+        I={params.tmp1} \
+        MAX_FILE_HANDLES=1000 \
+        O={params.tmp2} \
+        M={log} \
+        REMOVE_DUPLICATES=false \
+        CREATE_INDEX=true VALIDATION_STRINGENCY=SILENT
+
+      java -Xmx10g -jar {GATK} \
+         -T SplitNCigarReads \
+         -R {GENOME} \
+         -I {params.tmp2} \
+         -o {output.bam} \
+         -U ALLOW_N_CIGAR_READS \
+         -rf ReassignOneMappingQuality \
+         -RMQF 255 \
+         -RMQT 60
+      
+      samtools index {output.bam}
+      rm -f '{params.tmp1}'
+      rm -f '{params.tmp2}'
+    """
+
+rule create_sequence_dict:
+  input:
+    GENOME
+  output:
+    GENOME.replace(".fa", ".dict")
+  params:
+    job_name = "create_sequence_dict",
+    memory = "select[mem>16] rusage[mem=16]",
+  message:
+    "creating gatk compatible genome dictionary  "
+  shell:
+    """
+    java -Xmx10g -jar {PICARD} \
+      CreateSequenceDictionary \
+      R={input} \
+      O={output}
+    """

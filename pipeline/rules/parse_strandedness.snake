@@ -1,0 +1,407 @@
+
+""" count reads overlapping each strand """ 
+""" call variant based on strandedness """
+""" generate variants called for all types of sequence variants """ 
+
+SNPEFF = "/vol3/home/riemondy/bin/snpEff"
+
+def _get_comp(n):
+  base_dict = {"A":"T", "T":"A", "G":"C", "C":"G"}
+  return base_dict[n] 
+
+def _get_ref_comp(wildcards):
+  return _get_comp(wildcards.pos_ref)
+
+def _get_alt_comp(wildcards):
+  return _get_comp(wildcards.pos_alt)
+
+rule extract_attributes_from_stranded_variant_vcfs:
+  input:
+    variants = "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles/filtered_select_variants.vcf.gz",
+  output:
+    "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles/filtered_select_variants.bed.gz",
+  params:
+    job_name = "get_variant_info",
+    memory = "select[mem>4] rusage[mem=4]",
+  log:
+    "{data}/vcf/variant_allele_counts_by_strand/logs/{pos_ref}_{pos_alt}_get_variant_info.txt"
+  resources: all_threads=1
+  message:
+    "get variant info as bed"
+  shell:
+    """
+    python3 {LIB}/get_vcf_as_bed.py \
+      -v {input.variants} \
+      -a 'GENE_ID' 'BIOTYPE' 'TRANSCRIPT_ID' 'GENE_NAME' 'DENOVO_GENE_ID' 'DENOVO_TRANSCRIPT_ID' 'EXON_NUMBER' 'ANNOTATED' \
+      | gzip > {output}
+    """
+
+rule pileup_count_stranded_variants_trimmed:
+  input:
+    variants = "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles/filtered_select_variants.vcf.gz",
+    bam = "{data}/star/{fastq}_split.bam"
+  output:
+    "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles_trimmed/counts/{fastq}_counts.txt.gz"
+  params:
+    job_name = "count_alleles",
+    memory = "select[mem>4] rusage[mem=4]",
+  log:
+    "{data}/vcf/variant_allele_counts_by_strand/hexamer_trimmed/logs/{pos_ref}_{pos_alt}_counts/{fastq}_recount_alleles.txt"
+  message:
+    "recount allele depth with pysam"
+  threads:
+    5
+  resources: all_threads=5
+  shell:
+    """
+    python3 {LIB}/get_pileup.py \
+      -t {threads} \
+      -b {input.bam} \
+      -v {input.variants} \
+      -q 20 \
+      -p 6 \
+     | gzip > {output}
+    """
+
+rule pileup_count_stranded_variants:
+  input:
+    variants = "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles/filtered_select_variants.vcf.gz",
+    bam = "{data}/star/{fastq}_split.bam"
+  output:
+    "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles/counts/{fastq}_counts.txt.gz"
+  params:
+    job_name = "count_alleles",
+    memory = "select[mem>4] rusage[mem=4]",
+  log:
+    "{data}/vcf/variant_allele_counts_by_strand/logs/{pos_ref}_{pos_alt}_counts/{fastq}_recount_alleles.txt"
+  message:
+    "recount allele depth with pysam"
+  threads:
+    5
+  resources: all_threads=5
+  shell:
+    """
+    python3 {LIB}/get_pileup.py \
+      -t {threads} \
+      -b {input.bam} \
+      -v {input.variants} \
+      -q 20 \
+     | gzip > {output}
+    """
+
+
+rule filter_ambiguous_strandedness_all_variants:
+  input:
+    "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles/filtered.vcf.gz"
+  output:
+    "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles/filtered_select_variants.vcf.gz"
+  params:
+    memory = "select[mem>40] rusage[mem=40]",
+    job_name = "select_edits",
+    neg_ref = _get_ref_comp,
+    neg_alt = _get_alt_comp
+  log:
+    "{data}/vcf/variant_allele_counts_by_strand/logs/{pos_ref}_{pos_alt}_edits.txt"
+  message:
+    "select stranded edits"
+  resources: all_threads=1
+  shell:
+    """
+    # exclude sites that don't have ref and alt defined correctly by
+    # strand and sites that do not have strand annotation 
+    module load bcftools
+      bcftools filter \
+      -e '(REF = "{wildcards.pos_ref}" & ALT = "{wildcards.pos_alt}" \
+      & INFO/ANN[*] ~ "|strand_-|" \
+      & INFO/ANN[*] !~ "|strand_+|") \
+      | (REF = "{params.neg_ref}" & ALT = "{params.neg_alt}" \
+      & INFO/ANN[*] ~ "|strand_+|" \
+      & INFO/ANN[*] !~ "|strand_-|") \
+      | (INFO/ANN[*] !~ "|strand_") ' \
+      -O z -o {output} \
+      {input} 
+    """
+
+rule snpEff_filter_strandedness_variants:
+  input:
+    "{data}/vcf/variant_allele_counts_by_strand/annotated_variants_snpEFF.vcf.gz"
+  output:
+    "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles/filtered.vcf.gz"
+  params:
+    memory = "select[mem>40] rusage[mem=40]",
+    job_name = "vcf_filter",
+    tmp = "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles/filtered.vcf",
+    neg_ref = _get_ref_comp,
+    neg_alt = _get_alt_comp
+  log:
+    "{data}/vcf/variant_allele_counts_by_strand/logs/{pos_ref}_{pos_alt}_filter.txt"
+  message:
+    "filtering for transcript edits"
+  resources: all_threads=1
+  shell:
+    """
+    module load samtools/1.3
+    zcat {input} | \
+    java -Xmx4g -jar {SNPEFF}/SnpSift.jar filter \
+    "(\
+    (( (REF = '{wildcards.pos_ref}') & (ALT = '{wildcards.pos_alt}')) \
+    | ( (REF = '{params.neg_ref}') & (ALT = '{params.neg_alt}'))) \
+    )" > {params.tmp} 
+    bgzip {params.tmp} 
+    tabix -p vcf {output}
+    rm -f {params.tmp} 
+    """
+
+rule make_bed:
+  """ make bed file for computing basic statistical summary """
+  input:
+    "{data}/vcf/variant_allele_counts_by_strand/annotated_variants.vcf.gz",
+  output:
+    "{data}/vcf/variant_allele_counts_by_strand/annotated_variants.bed.gz",
+  params:
+    job_name = "make_beds",
+    memory = "select[mem>4] rusage[mem=4]",
+  log:
+    "{data}/vcf/variant_allele_counts_by_strand/logs/vcf_to_bed.txt"
+  resources: all_threads=1
+  message:
+    "vcf_to_bed "
+  shell:
+    """
+    python3 {LIB}/get_vcf_as_bed.py -v {input} \
+    -a 'GENE_ID' 'BIOTYPE' 'TRANSCRIPT_ID' 'GENE_NAME' 'DENOVO_GENE_ID' 'DENOVO_TRANSCRIPT_ID' 'EXON_NUMBER' 'ANNOTATED' \
+    | gzip > {output}
+    """
+
+rule snpEff_variants_based_on_strandedness:
+  input:
+    vcf =
+    "{data}/vcf/variant_allele_counts_by_strand/annotated_variants.vcf.gz",
+    annotations = "{data}/vcf/variant_allele_counts_by_strand/filtered.bed"
+  output:
+    gzip =
+    "{data}/vcf/variant_allele_counts_by_strand/annotated_variants_snpEFF.vcf.gz"
+  params:
+    memory = "select[mem>40] rusage[mem=40]",
+    tmp =
+    "{data}/vcf/variant_allele_counts_by_strand/annotated_variants_snpEFF.vcf",
+    job_name = "snpEFF"
+  log:
+    "{data}/vcf/recalibrated/logs/snpeff_all_transcripts.txt"
+  message:
+    "Snp Eff"
+  threads:
+    12
+  resources: all_threads=12
+  shell:
+    """
+    module load samtools/1.3
+    java -Xmx4g -jar {SNPEFF}/snpEff.jar ann \
+    -interval {input.annotations} \
+    -no-downstream \
+    -no-upstream \
+    -t  \
+    spetri2.86 \
+    {input.vcf} > {params.tmp}
+
+    bgzip {params.tmp}
+    tabix -p vcf {output.gzip}
+    rm -f {params.tmp}
+    """
+
+
+rule filter_vcf_based_on_stranded_reads:
+  input:
+    expand("{data}/vcf/variant_allele_counts_by_strand/strand_counts/{fastq}_strand_counts.txt.gz",
+    data=DATA, fastq=FASTQ)
+  output:
+    "{data}/vcf/variant_allele_counts_by_strand/filtered.bed"
+  params:
+    input_dir =
+    "{data}/vcf/variant_allele_counts_by_strand/strand_counts/*/*txt.gz",
+    job_name = "parse_strands",
+    memory = "select[mem>20] rusage[mem=20]",
+  log:
+    "{data}/vcf/variant_allele_counts_by_strand/logs/filtered/strands.txt"
+  resources: all_threads=1
+  message:
+    "filtering strands"
+  run:
+    """ group all allele strand counts and assign variants based on 
+        strandedness (>.80 plus = plus stranded) """
+
+    import pandas as pd
+    import glob
+    import numpy as np 
+
+    files = glob.glob(params.input_dir)
+    
+    dataframes = []
+
+    dataframes = [pd.read_table(f, 
+      delimiter = "\t", 
+      compression = "gzip", 
+      names = ["contig", 
+               "pos", 
+               "ref", 
+               "plus", 
+               "minus", 
+               "plus_pro",
+               "minus_pro"]) for f in files]
+
+    for idx, f in enumerate(files):
+        dataframes[idx]["file"] = f
+   
+    dataframes = pd.concat(dataframes, axis = 0)
+
+    grouped = dataframes.groupby(['contig', 'pos', 'ref'], as_index = False)
+
+    grouped = grouped.agg({"plus" : np.sum, "minus" : np.sum})
+
+    grouped["plus_pro"] = grouped['plus'] / (grouped['minus'] + grouped['plus'])
+    grouped["minus_pro"] = grouped['minus'] / (grouped['minus'] + grouped['plus'])
+
+    dat = grouped[(grouped.plus_pro > 0.80) | (grouped.minus_pro > 0.80)] 
+    dat = dat[~np.isinf(dat.plus_pro)]
+    dat["strand"] = np.where(dat['plus_pro'] > 0.80, "strand_+", "strand_-")
+    
+    # convert to bed format
+
+    dat['start'] = dat['pos'] - 1 
+    dat['end'] = dat['pos']
+    dat = dat[['contig', 'start', 'end', 'strand', 'ref', 'plus_pro',
+    'minus_pro', 'plus', 'minus']]
+    dat.to_csv(output[0], sep = "\t", index = False)
+   
+rule count_stranded_reads:
+  input:
+    merged_vcf =
+    "{data}/vcf/variant_allele_counts_by_strand/annotated_variants.vcf.gz",
+    bam = "{data}/star/{fastq}_split.bam",
+    bai = "{data}/star/{fastq}_split.bam.bai"
+  output:
+    "{data}/vcf/variant_allele_counts_by_strand/strand_counts/{fastq}_strand_counts.txt.gz"
+  params:
+    job_name = "parse_strands",
+    memory = "select[mem>4] rusage[mem=4]",
+  log:
+    "{data}/vcf/variant_allele_counts_by_strand/logs/strand_counts/{fastq}.txt"
+  resources: all_threads=1
+  message:
+    "counting per reads strandedness"
+  shell:
+    """
+    {LIB}/check_strandedness.py -v {input.merged_vcf} \
+      -b {input.bam} | gzip > {output}
+    """
+
+rule annotate_variants_with_bed_info: 
+  input:
+    vcf =
+    "{data}/vcf/recalibrated/merged_recalibrated_hardfiltered_2x_snps.vcf.gz",
+    annotations = ANNOTATION_DIR +  "gtf_transcripts.bed.gz",
+  output:
+    "{data}/vcf/variant_allele_counts_by_strand/annotated_variants.vcf.gz"
+  params:
+    job_name = "annotate_vcfs",
+    memory = "select[mem>40] rusage[mem=40]",
+  log:
+    "{data}/vcf/variant_allele_counts_by_strand/logs/vcf_annotate_transcripts.txt"
+  message:
+    "annotating vcf " 
+  resources: all_threads=1
+  shell:
+    """
+    module load samtools/1.3
+    module load bcftools
+    echo \
+    '##INFO=<ID=DENOVO_GENE_ID,Number=1,Type=String,Description="taco gene id">
+##INFO=<ID=BIOTYPE,Number=1,Type=String,Description="ensembl biotype">
+##INFO=<ID=TRANSCRIPT_ID,Number=1,Type=String,Description="ensembl transcript id">
+##INFO=<ID=GENE_ID,Number=1,Type=String,Description="Ensemble gene id">
+##INFO=<ID=GENE_NAME,Number=1,Type=String,Description="Ensemble gene name">
+##INFO=<ID=DENOVO_TRANSCRIPT_ID,Number=1,Type=String,Description="taco transcript id">
+##INFO=<ID=EXON_NUMBER,Number=1,Type=String,Description="Ensemble exon number">
+##INFO=<ID=REGION,Number=1,Type=String,Description="Ensemble region">
+##INFO=<ID=ANNOTATED,Number=1,Type=String,Description="annotated?">' > \
+    {ANNOTATION_DIR}'header_lines.txt'
+    
+
+    bcftools annotate -a {input.annotations} \
+    -c CHROM,FROM,TO,-,-,-,DENOVO_GENE_ID,BIOTYPE,TRANSCRIPT_ID,GENE_ID,GENE_NAME,DENOVO_TRANSCRIPT_ID,EXON_NUMBER,REGION,ANNOTATED \
+    -h {ANNOTATION_DIR}'header_lines.txt' \
+    -i 'FILTER == \"PASS\"' \
+    -O z \
+    -o {output} \
+    {input.vcf}
+
+    tabix -p vcf {output}
+    module unload bcftools
+    """
+
+rule extract_transcripts:
+  input:
+    ANNOTATION_DIR + "gtf_to_bed.bed",
+  output:
+    bed =  ANNOTATION_DIR + "gtf_transcripts.bed.gz",
+    tbx = ANNOTATION_DIR + "gtf_transcripts.bed.gz.tbi"
+  params:
+    tmpbed =  ANNOTATION_DIR +"gtf_transcripts.bed",
+    job_name = "prepare_transcripts",
+    memory = "select[mem>40] rusage[mem=40]",
+  log:
+    "../dbases/ensembl85/logs/prepare_transcripts.txt"
+  resources: all_threads=1
+  message:
+    " prepare transcripts "
+  shell:
+    """
+    module load samtools/1.3
+    
+    bedtools sort -i {input} | \
+    awk '{{OFS=FS="\t"}} $15=="transcript"' \
+    > {params.tmpbed} 
+
+    bgzip {params.tmpbed} 
+
+    tabix -0 -p bed {output.bed} 
+    
+    """
+
+rule prepare_gtf_to_bed:
+  input:
+    {TRANSCRIPTS}
+  output:
+    full_bed = ANNOTATION_DIR + "gtf_to_bed.bed", 
+    bed =  ANNOTATION_DIR +"gtf_exons.bed.gz",
+    tbx =  ANNOTATION_DIR +"gtf_exons.bed.gz.tbi"
+  params:
+    job_name = "prepare_annotations",
+    tmpbed =  ANNOTATION_DIR +"gtf_exons.bed",
+    memory = "select[mem>40] rusage[mem=40]",
+  log:
+    ANNOTATION_DIR + "logs/prepare_annotations.txt"
+  resources: all_threads=1
+  message:
+    " prepare annotations "
+  shell:
+    """
+    module load python
+    module load samtools/1.3
+    python {LIB}/gtf_to_bed.py -i {input} \
+    -a "gene_id" "ref_gene_type" "ref_transcript_id" "ref_gene_id" "gene_name" "transcript_id", "exon_number", "annotation"  \
+    -c 3 \
+    -o {output.full_bed} 
+
+    bedtools sort -i {output.full_bed} | \
+    awk '{{OFS=FS="\t"}} $15=="exon"' \
+    > {params.tmpbed} 
+
+    bgzip {params.tmpbed} 
+
+    tabix -0 -p bed {output.bed} 
+    
+    module unload python
+    module unload samtools/1.3
+
+    """

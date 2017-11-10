@@ -1,0 +1,28 @@
+
+''' rules to count reads overlapping genes '''
+
+rule fc_paired_end_nonstranded_gene_level:
+  input:
+    expand("{data}/star/{fastq}_2pass_Aligned.sortedByCoord.out.bam",
+    data=DATA, fastq=FASTQ)
+  output:
+    "{data}/featurecounts/count_summary.tsv",
+  params:
+    job_name = "{data}.bamcount",
+    memory = "select[mem>8] rusage[mem=8]",
+  log:
+    "{data}/featurecounts/logs/count_summary.txt"
+  threads:
+    12
+  shell:
+    """
+    module load subread
+    featureCounts \
+    -s 0 -p -P -B -C -Q 10 -F 'GTF' \
+    -a {TRANSCRIPTS} \
+    -o {output} \
+    -T {threads} \
+    {input}
+    module unload subread
+    """
+

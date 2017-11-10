@@ -1,0 +1,80 @@
+
+''' rules for exon/intron splicing analysis '''  
+
+full_path = "/vol3/home/riemondy/Projects/Martin/"
+rule dexseq_report:
+  input: 
+    DATA + "/featurecounts/dexseq/count_summary.tsv"
+  output:
+    full_path + "results/{SPLICING_RESULT}/dexseq_{region}.html"
+  params:
+    counts = full_path + "data/featurecounts/dexseq/count_summary.tsv",
+    gtf = full_path + "dbases/" + ANNOTATION_DIR + "flat_exons_for_featurecounts.gtf",
+    region = "{region}",
+    metadata = full_path + "docs/BrainRegionRNAseqLibMetadata.txt",
+    job_name = "{region}.splice",
+    memory = "select[mem>30 && hname!='compute17'] rusage[mem=30] ",
+  log: full_path + "results/{SPLICING_RESULT}/logs/{region}.txt"
+  threads: 12 
+  resources: all_threads=12
+  shell:
+    """
+    module load gcc
+    Rscript {RESULTS}/{SPLICING_RESULT}/dexseq_markdown.R \
+    {output}  \
+    {params.region} \
+    {params.counts} \
+    {threads} \
+    {params.gtf}
+    module unload gcc
+    """
+
+rule fc_dexseq:
+  input:
+    fc = ANNOTATION_DIR + "flat_exons_for_featurecounts.gtf",
+    bam =
+    expand("{data}/star/{fastq}_2pass_Aligned.sortedByCoord.out.bam",
+    data=DATA, fastq=FASTQ)
+  output:
+    "{data}/featurecounts/dexseq/count_summary.tsv",
+  params:
+    job_name = "{data}.bamcount",
+    memory = "select[mem>8] rusage[mem=8]",
+  log:
+    "{data}/featurecounts/dexseq/logs/count_summary.txt"
+  threads:
+    6 
+  resources: all_threads=6
+  shell:
+    """
+    module load subread
+    featureCounts \
+    -f -O -s 2 -p -B -C -Q 10 -F 'GTF' \
+    -t exon \
+    -a {input.fc} \
+    -o {output} \
+    -T {threads} \
+    {input.bam}
+    module unload subread
+    """
+
+rule prepare_dexseq:
+  output:
+    dexseq = ANNOTATION_DIR + "flat_exons_for_dexseq.gtf",
+    fc = ANNOTATION_DIR + "flat_exons_for_featurecounts.gtf",
+  params:
+    job_name = "fccount",
+    memory = "select[mem>8] rusage[mem=8]",
+  log:
+    ANNOTATION_DIR + "logs/prepare_dexseq.txt"
+  resources: all_threads=1
+  shell:
+    """
+    module load python
+    python {LIB}/dexseq_prepare_annotation2.py \
+      -r no \
+      -f {output.fc} \
+      {TRANSCRIPTS} \
+      {output.dexseq}
+    module unload python
+    """    

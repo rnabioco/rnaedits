@@ -1,0 +1,271 @@
+from os import path
+""" produce CDS predictions using transdecoder for stringtie/taco
+    transcriptome. Use CDS predictions to run SNPeff to find previously
+    unannotated impactful variants
+    
+    For SNPeff a new database must be built from the transdecoder gtf
+    file. This is done manually:
+    http://snpeff.sourceforge.net/SnpEff_manual.html#databases
+
+    """
+
+TRANSDECODER = "/vol3/home/riemondy/bin/TransDecoder-3.0.1/"
+SNPEFF = "/vol3/home/riemondy/bin/snpEff"
+PFAM = "/vol3/home/riemondy/Projects/shared_dbases/protein_db/hmmer/Pfam-A.hmm"
+SREF = "/vol3/home/riemondy/Projects/shared_dbases/protein_db/swissprot/uniprot_sprot.fasta.gz"
+BLASTDB = "/vol3/home/riemondy/Projects/shared_dbases/protein_db/swissprot/swissref_blastdb.phr"
+
+CDSDIR = path.join(DATA, "cdspred")
+
+rule snpEff_filter_denovo_variants:
+  """ filter out specific alleles into seperate vcfs """
+  input:
+    "{data}/vcf/variant_allele_counts_by_strand/denovo/annotated_denovo_variants_snpEFF.vcf.gz"
+  output:
+    "{data}/vcf/variant_allele_counts_by_strand/denovo/per_allele/{pos_ref}_{pos_alt}_alleles/filtered.vcf.gz"
+  params:
+    memory = "select[mem>40] rusage[mem=40]",
+    job_name = "vcf_filter",
+    tmp = "{data}/vcf/variant_allele_counts_by_strand/denovo/per_allele/{pos_ref}_{pos_alt}_alleles/filtered.vcf",
+    neg_ref = _get_ref_comp,
+    neg_alt = _get_alt_comp
+  log:
+    "{data}/vcf/variant_allele_counts_by_strand/denovo/logs/{pos_ref}_{pos_alt}_filter.txt"
+  message:
+    "filtering for transcript edits"
+  shell:
+    """
+    module load samtools/1.3
+    zcat {input} | \
+    java -Xmx4g -jar {SNPEFF}/SnpSift.jar filter \
+    "(\
+    (( (REF = '{wildcards.pos_ref}') & (ALT = '{wildcards.pos_alt}')) \
+    | ( (REF = '{params.neg_ref}') & (ALT = '{params.neg_alt}'))) \
+    )" > {params.tmp}
+    bgzip {params.tmp}
+    tabix -p vcf {output}
+    rm -f {params.tmp}
+    """
+
+rule snpEff_denovo_variants:
+  """ 
+   annotate variants with SnpEff, using custom built GTF
+
+   SnpEff version SnpEff 4.3b (build 2016-11-06 07:07)
+  database named spetri2.85.denovo
+  """
+  input:
+    vcf =
+    "{data}/vcf/variant_allele_counts_by_strand/annotated_variants.vcf.gz",
+    annotations = "{data}/vcf/variant_allele_counts_by_strand/filtered.bed"
+  output:
+    gzip =
+    "{data}/vcf/variant_allele_counts_by_strand/denovo/annotated_denovo_variants_snpEFF.vcf.gz"
+  params:
+    memory = "select[mem>40] rusage[mem=40]",
+    tmp =
+    "{data}/vcf/variant_allele_counts_by_strand/denovo/annotated_denovo_variants_snpEFF.vcf",
+    job_name = "snpEFF"
+  log:
+    "{data}/vcf/variant_allele_counts_by_strand/denovo/logs/snpeff_all_transcripts.txt"
+  threads: 2 # java throws out other threads for GC
+  message:
+    "Snp Eff"
+  shell:
+    """
+    module load samtools/1.3
+    java -Xmx4g -jar {SNPEFF}/snpEff.jar ann \
+    -interval {input.annotations} \
+    -no-downstream \
+    -no-upstream \
+    spetri2.85.denovo \
+    {input.vcf} > {params.tmp}
+
+    bgzip {params.tmp}
+    tabix -p vcf {output.gzip}
+    rm -f {params.tmp}
+    
+    """
+
+rule predict_ORFS:
+  """ 
+  run orf predictions using blast and hmmer output
+  """
+  input:
+    blast = path.join(CDSDIR, "blast", "blastp.swissprot.outfmt6"),
+    hmmer = path.join(CDSDIR, "hmmer", "pfam.domtblout"),
+    t_fa = path.join(CDSDIR, "transcripts.fa"),
+    gff = path.join(CDSDIR, "fixed.all95.gff3"),
+  output:
+    gff3 = path.join(CDSDIR, "transcripts.fa.transdecoder.gff3"),
+    g_gff3 = path.join(CDSDIR, "transcripts.fa.transdecoder.genome.gff3"), 
+    bed = path.join(CDSDIR, "transcripts.fa.transdecoder.genome.bed"), 
+    gtf = path.join(CDSDIR, "transcripts.fa.transdecoder.genome.snpeff.gtf"), 
+  params:
+    job_name = "ORFpreds",
+    memory = "select[mem>40] rusage[mem=40]",
+  threads: 8
+  log: path.join(CDSDIR, "logs", "predict.txt")
+  message: "predict orfs" 
+  shell:
+    """
+    # set hash seed for deterministic behavior
+    export PERL_HASH_SEED=20170628
+
+    # predict
+    {TRANSDECODER}/TransDecoder.Predict \
+      -t {input.t_fa} \
+      --retain_pfam_hits {input.blast} \
+      --retain_blastp_hits {input.hmmer} \
+      --single_best_orf \
+      --cpu {threads}
+    
+    # move output files, which are placed in executing directory...
+
+    mv -f transcripts.fa.transdecoder.* {CDSDIR}
+    mv -f transcripts.fa.transdecoder_dir {CDSDIR}
+
+    # convert gff coordinates from transcript to genome 
+    {TRANSDECODER}/util/cdna_alignment_orf_to_genome_orf.pl \
+      {output.gff3} {input.gff} {input.t_fa} \
+      > {output.g_gff3} 
+    
+    # make bed output for ucsc
+    {TRANSDECODER}/util/gff3_file_to_bed.pl \
+      {output.g_gff3} > {output.bed}
+    
+    # convert weird gff3 format to gtf suitable for Snpeff
+    module load python3
+
+    python3 {LIB}/gff_to_gtf.py \
+    -i {output.g_gff3} \
+    -g {TRANSCRIPTS} \
+    -a "transcript_id" "gene_id" "ref_gene_id" \
+    > {output.gtf}
+    """
+
+
+rule blastsearch:
+  """ 
+  run blastp on predicted peptides
+  blastp: 2.2.29+
+  Package: blast 2.2.29, build Feb 26 2014 06:07:38
+  """
+  input:
+    db = BLASTDB,
+    pep = path.join(CDSDIR, "transcripts.fa.transdecoder_dir",
+    "longest_orfs.pep")
+  output:
+    path.join(CDSDIR, "blast", "blastp.swissprot.outfmt6")
+  params:
+    job_name = "blast",
+    memory = "select[mem>40] rusage[mem=40]",
+  threads: 16
+  log: path.join(CDSDIR, "logs", "blast.txt")
+  message: "blast search orfs" 
+  shell:
+    """
+    module load ncbi-blast 
+    blastp \
+      -query {input.pep} \
+      -db {input.db} \
+      -max_target_seqs 1 \
+      -outfmt 6 \
+      -evalue 1e-5 \
+      -num_threads {threads} > {output}
+    """
+
+rule makeblastdb:
+  """ 
+  convert swissref db to blastdb
+  April 10, 2017, dl June 23, 2017 
+  2.2.29+
+  Package: blast 2.2.29, build Feb 26 2014 06:07:38
+  """
+  input:
+    db = SREF
+  output:
+    BLASTDB,
+  params:
+    job_name = "makeblastdb",
+    memory = "select[mem>40] rusage[mem=40]",
+  log: path.join(CDSDIR, "logs", "makeblastdb.txt")
+  message: "generate blast db" 
+  shell:
+    """
+    module load ncbi-blast 
+    gunzip -c {input.db} \
+    | makeblastdb -in - \
+      -dbtype 'prot' \
+      -out {params.outdir} \
+      -title "swissref_db April 10, 2017, dl June 23, 2017"    
+    """
+
+
+rule hmmerpred:
+  """ 
+  run hmmer on predicted peptides
+  HMMER 3.1b1 (May 2013); http://hmmer.org/
+  """
+  input:
+    db = PFAM,
+    pep = path.join(CDSDIR, "transcripts.fa.transdecoder_dir",
+      "longest_orfs.pep")
+  output:
+    path.join(CDSDIR, "hmmer", "pfam.domtblout")
+  params:
+    job_name = "hmmerdb",
+    memory = "select[mem>40] rusage[mem=40]",
+  threads: 8
+  log: path.join(CDSDIR, "logs", "hmmer.txt")
+  message: "hmmer search orfs" 
+  shell:
+    """
+    module load hmmer
+    hmmscan \
+      --cpu {threads} \
+      --domtblout {output} \
+      {input.db} \
+      {input.pep}
+    """
+
+rule generate_pep_fasta: 
+  """ 
+  produce a transcript fasta file from stringtie/taco gtf
+  and extract ORFS (min length = 100). 
+
+  transdecoder 3.0.1 
+  https://github.com/TransDecoder/TransDecoder
+  """
+  input:
+    {TRANSCRIPTS}, {GENOME}
+  output:
+    gff = path.join(CDSDIR, "fixed.all95.gff3"),
+    t_fa = path.join(CDSDIR, "transcripts.fa"),
+    pep = path.join(CDSDIR, "transcripts.fa.transdecoder_dir", 
+      "longest_orfs.pep")
+  params:
+    job_name = "ORFextract",
+    memory = "select[mem>4] rusage[mem=4]",
+  log: path.join(CDSDIR, "logs", "extract_orfs.txt")
+  message: "extracting ORFs" 
+  shell:
+    """
+    # convert to gff3
+    {TRANSDECODER}/util/cufflinks_gtf_to_alignment_gff3.pl \
+      {TRANSCRIPTS} > {output.gff}
+    
+    # generate fasta
+    {TRANSDECODER}/util/cufflinks_gtf_genome_to_cdna_fasta.pl \
+    {TRANSCRIPTS} {GENOME} \
+    > {output.t_fa} 
+    
+    # extract long ORFS
+    {TRANSDECODER}/TransDecoder.LongOrfs \
+      -t {output.t_fa} -S
+    
+    # copy output directory (Transdecoder needs it in executing directory, 
+    #  will delete after snakemake finishes
+    cp -r transcripts.fa.transdecoder_dir {CDSDIR}
+    """
+

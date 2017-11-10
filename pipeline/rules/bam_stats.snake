@@ -1,0 +1,113 @@
+### generate basic stats about libraries """
+
+def _group_samples(wildcards):
+    input_files = expand("{data}/star/{fastq}_2pass_Aligned.sortedByCoord.out.bam",
+    data=DATA, fastq=FASTQ)
+    input_str = ",".join(input_files)
+    return input_str
+
+TRANSCRIPTS_BED = "../dbases/ensembl85/Ictidomys_tridecemlineatus.spetri2.85.ucsc.sorted.bed"
+
+rule check_nonsigedit_positions:
+  """ compute distribution of read positions each edit is found in """
+  input:
+    bam = "{data}/star/{fastq}_2pass_Aligned.sortedByCoord.out.bam",
+    bed = "{data}/edit_sites/A_G_filtered_high_fdr_sites.bed"
+  output:
+    stat = "{data}/edit_sites/nonsig_edit_positions/{fastq}_editpos.txt",
+  params:
+    job_name = '{fastq}.site_stats',
+    memory =  "select[mem>8] rusage[mem=8] span[hosts=1]"
+  message:
+    "getting edit positions"
+  resources: all_threads=1
+  log: 
+    "{data}/edit_sites/logs/edit_positions/{fastq}_non_sigeditpos.txt",
+  shell:
+    """
+    module load python3
+    python3 {LIB}/check_editposition.py -b {input.bam} \
+      -v {input.bed} -q 30 -m > {output}
+    module unload python3
+    """
+
+rule check_sigedit_positions:
+  """ compute distribution of read positions each edit is found in """
+  input:
+    bam = "{data}/star/{fastq}_2pass_Aligned.sortedByCoord.out.bam",
+    bed = "{data}/edit_sites/A_G_filtered_fdr0.01_sites_class1.bed"
+  output:
+    stat = "{data}/edit_sites/edit_positions/{fastq}_editpos.txt",
+  params:
+    job_name = '{fastq}.site_stats',
+    memory =  "select[mem>8] rusage[mem=8] span[hosts=1]"
+  message:
+    "getting edit positions"
+  resources: all_threads=1
+  log: 
+    "{data}/edit_sites/logs/edit_positions/{fastq}_editpos.txt",
+  shell:
+    """
+    python3 {LIB}/check_editposition.py -b {input.bam} \
+      -v {input.bed} -q 30 -m > {output}
+    """
+
+
+rule all_lib_stats:
+  output:
+    coverage = "{data}/qc_stats/gene_coverage.geneBodyCoverage.txt",
+  params:
+    bam = _group_samples,
+    outdir_coverage = "{data}/qc_stats/gene_coverage",
+    job_name = '{data}.covstats',
+    memory =  "select[mem>80] rusage[mem=80] span[hosts=1]"
+  message:
+    "coverage stats"
+  shell:
+    """
+    module load python
+    
+    geneBody_coverage.py \
+      -i {params.bam} \
+      -r {TRANSCRIPTS_BED} \
+      -o {params.outdir_coverage}
+    module unload python
+    """
+
+def _read_length(wildcards):
+    ## mismatch_profile.py will fail if incorrect read length supplied
+    ## hypo and medulla libs are 151 
+    ## forebrain is 126
+
+    fq = wildcards.fastq
+    if "brainrest" in fq:
+        return 126
+    else:
+        return 151
+
+rule single_lib_stats:
+  input:
+    bam = "{data}/star/{fastq}_2pass_Aligned.sortedByCoord.out.bam",
+  output:
+    bam_stat = "{data}/qc_stats/{fastq}_bam_stat.txt",
+    expt = "{data}/qc_stats/{fastq}_lib_type.txt",
+    dist = "{data}/qc_stats/{fastq}_read_dist.txt",
+    mm = "{data}/qc_stats/{fastq}.mismatch_profile.r",
+  params:
+    nvc = "{data}/qc_stats/{fastq}/nvc",
+    mm = "{data}/qc_stats/{fastq}",
+    job_name = '{data}.libstats',
+    read_length = _read_length,
+    memory =  "select[mem>80] rusage[mem=80] span[hosts=1]"
+  message:
+    "getting alignment stats"
+  shell:
+    """
+    module load python
+    bam_stat.py -i {input.bam} -q 10 > {output.bam_stat}
+    infer_experiment.py -i {input.bam} -r {TRANSCRIPTS_BED} -q 10 > {output.expt}
+    read_distribution.py -i {input.bam} -r {TRANSCRIPTS_BED} > {output.dist}
+    read_NVC.py -i {input.bam} --nx -q 10 -o {params.nvc} 
+    mismatch_profile.py -i {input.bam} -l {params.read_length} -n 10000000 -q 10 -o {params.mm}
+    module unload python
+    """

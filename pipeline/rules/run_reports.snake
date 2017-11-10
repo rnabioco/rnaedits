@@ -1,0 +1,61 @@
+
+rule run_reports:
+  input:
+    "{data}/vcf/{variant_types}/{pos_ref}_{pos_alt}_alleles/filtered_select_variants.bed.gz",
+    counts = expand("{{data}}/vcf/{{variant_types}}/{{pos_ref}}_{{pos_alt}}_alleles/counts/{fastq}_counts.txt.gz",
+    fastq=FASTQ)
+  output:
+    "{data}/../results/{result_date}/{variant_types}/{pos_ref}_{pos_alt}_alleles/{pos_ref}_{pos_alt}_alleles.html"
+  params:
+    allele = "{pos_ref}_{pos_alt}_alleles",
+    indir = "../{data}/vcf/{variant_types}/",
+    outdir = "../results/{result_date}/{variant_types}/",
+    job_name = "run_reports",
+    memory = "select[mem>65] rusage[mem=65]",
+    rmd = "../results/2017-04-17/analyze_all_variants.Rmd" 
+  resources: all_threads=2
+  log:
+    "../results/logs/{result_date}/{variant_types}/run_all_variants_{pos_ref}_{pos_alt}.txt"
+  shell:
+    """
+    module load gcc
+    Rscript ../R/render_single_variants.R \
+      {params.allele} \
+      {params.indir} \
+      {params.outdir} \
+      {params.rmd} \
+      {params.outdir}
+     
+    module unload gcc
+    """
+
+
+rule run_reports_trimmed:
+  input:
+    "{data}/vcf/{variant_types}/{pos_ref}_{pos_alt}_alleles/filtered_select_variants.bed.gz",
+    counts = expand("{{data}}/vcf/{{variant_types}}/{{pos_ref}}_{{pos_alt}}_alleles_trimmed/counts/{fastq}_counts.txt.gz",
+    fastq=FASTQ)
+  output:
+    "{data}/../results/{result_date}/{variant_types}/{pos_ref}_{pos_alt}_alleles_trimmed/{pos_ref}_{pos_alt}_alleles_trimmed.html"
+  params:
+    allele = "{pos_ref}_{pos_alt}_alleles_trimmed",
+    indir = "../{data}/vcf/{variant_types}/",
+    outdir = "../results/{result_date}/{variant_types}/",
+    job_name = "run_reports",
+    memory = "select[mem>65] rusage[mem=65]",
+    rmd = "../results/2017-04-17/analyze_all_variants.Rmd" 
+  resources: all_threads=2
+  log:
+    "../results/logs/{result_date}/{variant_types}/run_all_variants_{pos_ref}_{pos_alt}.txt"
+  shell:
+    """
+    module load gcc
+    Rscript ../R/render_single_variants.R \
+      {params.allele} \
+      {params.indir} \
+      {params.outdir} \
+      {params.rmd} \
+      {params.outdir}
+    
+    module unload gcc
+    """

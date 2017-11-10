@@ -1,0 +1,93 @@
+
+""" rules for two pass mapping """
+
+rule idx_bams_out:
+   input:
+     "{data}/star/{fastq}_2pass_Aligned.sortedByCoord.out.bam"
+   output:
+     protected("{data}/star/{fastq}_2pass_Aligned.sortedByCoord.out.bam.bai")
+   params:
+     job_name = "idx_bam",
+     memory = "select[mem>10] rusage[mem=10]",
+   resources: all_threads=1
+   log:
+     "{data}/star/logs/{fastq}_index.txt"
+   shell:
+     "samtools index {input}"
+
+rule star_second_pass:
+   input:
+     FQ1 = "{data}/raw_data/{fastq}_R1_001.fastq.gz",
+     FQ2 = "{data}/raw_data/{fastq}_R2_001.fastq.gz",
+     first_bam = "{data}/star/{fastq}_Aligned.sortedByCoord.out.bam",
+     junctions = expand("{data}/star/{fastq}_SJ.out.tab",
+       data=DATA, fastq=FASTQ)
+   output:
+     protected("{data}/star/{fastq}_2pass_Aligned.sortedByCoord.out.bam"),
+     protected("{data}/star/{fastq}_2pass_Unmapped.out.mate1.fastq.gz"),
+     protected("{data}/star/{fastq}_2pass_Unmapped.out.mate2.fastq.gz"),
+   params:
+     job_name = "star_pass_2",
+     out = "{data}/star/{fastq}_2pass_",
+     memory = "select[mem>45] rusage[mem=45]",
+   log:
+     "{data}/star/logs/{fastq}_align_2.txt"
+   message:
+     "running second pass star alignments "
+   threads:
+     12
+   resources: all_threads=12
+   shell:
+     """
+     module load star
+     STAR \
+       --genomeDir {GENOME_DIR}  \
+       --runThreadN {threads} \
+       --readFilesIn {input.FQ1} {input.FQ2} \
+       --outSAMtype BAM SortedByCoordinate \
+       --readFilesCommand gunzip -c \
+       --outFileNamePrefix {params.out} \
+       --sjdbFileChrStartEnd {input.junctions} \
+       --limitSjdbInsertNsj 1250000 \
+       --outSAMattributes NH HI AS nM MD \
+       --outReadsUnmapped Fastx
+
+     gzip -f -S .fastq.gz {params.out}Unmapped.out.mate1 
+     gzip -f -S .fastq.gz {params.out}Unmapped.out.mate2 
+
+     module unload star
+     """
+
+rule star_first_pass:
+   input:
+     FQ1 = "{data}/raw_data/{fastq}_R1_001.fastq.gz",
+     FQ2 = "{data}/raw_data/{fastq}_R2_001.fastq.gz",
+     genome = GENOME_DIR + "/Genome"
+   output:
+     "{data}/star/{fastq}_SJ.out.tab",
+     bam = temp("{data}/star/{fastq}_Aligned.sortedByCoord.out.bam"),
+   params:
+     job_name = "star_pass_1",
+     out = "{data}/star/{fastq}_",
+     memory = "select[mem>45] rusage[mem=45]",
+   log:
+     "{data}/star/logs/{fastq}_align.txt"
+   message:
+     "running first pass star alignments "
+   threads:
+     12
+   
+   resources: all_threads=12
+   
+   shell:
+     """
+     module load star
+     STAR \
+       --genomeDir {GENOME_DIR}  \
+       --runThreadN {threads} \
+       --readFilesIn {input.FQ1} {input.FQ2} \
+       --outSAMtype BAM SortedByCoordinate \
+       --readFilesCommand gunzip -c \
+       --outFileNamePrefix {params.out}
+     module unload star
+     """

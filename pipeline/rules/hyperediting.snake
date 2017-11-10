@@ -1,0 +1,302 @@
+""" rules for detecting hyperedited regions """ 
+
+def get_mated_bam(wildcards):
+  read = wildcards.read
+  if read == "1":
+    opp_read = "2"
+  else:
+    opp_read = "1"
+  
+  fq_ref = comp(wildcards.f_ref)
+  fq_alt = comp(wildcards.f_alt)
+
+  outbam = os.path.join(wildcards.data,
+                     "hyperedits",
+                     wildcards.fastq + "_" + opp_read + "_" +
+                     fq_ref + "to" + fq_alt + "_gnome" +
+                     wildcards.c_ref + "to" + wildcards.c_alt + ".bam")
+  return outbam
+
+EDITS = "{data}/hyperedits/bed/edits/"
+READS = "{data}/hyperedits/bed/reads/"
+
+rule count_alleles_hyperediting:
+  """
+  count alleles for each hyperedited site
+  from star aligned data to compute
+  allelic frequencies.
+  input vcf file produced from edits-hyperediting.Rmd locally
+  """
+  input:
+    variants = "{data}/hyperedits/hyperedited_sites.vcf",
+    bam = "{data}/star/{fastq}_split.bam"
+  output:
+    "{data}/hyperedits/site_counts/A_G_counts/{fastq}_counts.txt.gz"
+  params:
+    job_name = "count_alleles",
+    memory = "select[mem>4] rusage[mem=4]",
+  log:
+    "{data}/hyperedits/logs/allele_counts/{fastq}_counts.txt"
+  message:
+    "recount allele depth with pysam"
+  threads:
+    5
+  resources: all_threads=5
+  shell:
+    """
+    python3 {LIB}/get_pileup.py \
+      -t {threads} \
+      -b {input.bam} \
+      -v {input.variants} \
+      -q 20 \
+      -p 6 \
+     | gzip > {output}
+    """
+
+  
+rule filter_edits:
+  """
+  only keep hyperediting sites supported by 2 reads and
+  parse out just A-to-G type. 
+  """
+  input:
+    expand(expand("{{data}}/hyperedits/bed/{{type}}/filtered/{ref}_to_{alt}/{{fastq}}_{{read}}_{f_ref}to{f_alt}_gnome{c_ref}to{c_alt}.bed",
+      zip, 
+      ref = POS_REF*4, 
+      alt = POS_ALT*4, 
+      f_ref = POS_REF*2 + C_POS*2, 
+      f_alt = POS_ALT*2 + C_ALT*2, 
+      c_ref = (C_POS + POS_REF)*2, 
+      c_alt= (C_ALT + POS_ALT)*2), 
+      data = DATA, 
+      fastq=FASTQ, 
+      type = ["edits", "reads"], 
+      read = ["1", "2"]),
+  output:
+    variants = "{data}/hyperedits/hyperedited_sites.vcf",
+  params:
+    job_name = "filter_hyperedits",
+    memory = "select[mem>5] rusage[mem=5]",
+  log:
+    "{data}/hyperedits/logs/filter_edits.txt"    
+  resources: all_threads = 1
+  message: "filtering hyperedits"
+  shell:
+    """
+    R -e 'source("{LIB}/filter_hyperedits.R", chdir = T)'
+    """
+
+rule keep_paired_edits:
+  input: 
+    edits = EDITS + "{ref}_to_{alt}/{fastq}_{read}_{f_ref}to{f_alt}_gnome{c_ref}to{c_alt}.bed",
+    reads = READS + "{ref}_to_{alt}/{fastq}_{read}_{f_ref}to{f_alt}_gnome{c_ref}to{c_alt}.bed",
+    opp_bam = get_mated_bam,
+  output:
+    edits = EDITS + "filtered/{ref,[ATCG]}_to_{alt,[ATCG]}/{fastq}_{read}_{f_ref}to{f_alt}_gnome{c_ref}to{c_alt}.bed",
+    reads = READS + "filtered/{ref,[ATCG]}_to_{alt,[ATCG]}/{fastq}_{read}_{f_ref}to{f_alt}_gnome{c_ref}to{c_alt}.bed",
+  params:
+    job_name = "check_paired_end_reads",
+    memory = "select[mem>5] rusage[mem=5]",
+  log:
+     "{data}/hyperedits/logs/bed/{fastq}_{read}_{f_ref}to{f_alt}_{c_ref}to{c_alt}_check_pe.txt",
+  resources: all_threads = 1 
+  message:
+    "check pe distance"
+  shell:
+    """
+    module load python3
+
+    python3 {LIB}/check_paired_end_distance.py \
+      -b {input.opp_bam} \
+      -r {input.reads} \
+      -e {input.edits} \
+      -R {output.reads} \
+      -E {output.edits} 
+
+    """
+
+
+rule find_edits:
+  input:
+    bam = "{data}/hyperedits/{fastq}_{read}_{f_ref}to{f_alt}_gnome{c_ref}to{c_alt}.bam",
+    idx = "{data}/hyperedits/{fastq}_{read}_{f_ref}to{f_alt}_gnome{c_ref}to{c_alt}.bam.bai",
+  output:
+    edits = "{data}/hyperedits/bed/edits/{ref,[ATCG]}_to_{alt,[ATCG]}/{fastq}_{read}_{f_ref}to{f_alt}_gnome{c_ref}to{c_alt}.bed",
+    reads = "{data}/hyperedits/bed/reads/{ref,[ATCG]}_to_{alt,[ATCG]}/{fastq}_{read}_{f_ref}to{f_alt}_gnome{c_ref}to{c_alt}.bed",
+  params:
+    job_name = "filter_bed.{fastq}",
+    memory = "select[mem>5] rusage[mem=5]",
+  log:
+    "{data}/hyperedits/logs/bed/{fastq}_{read}_{ref}{alt}{c_ref}{c_alt}filter.txt",
+  resources: all_threads = 1 
+  message:
+    "filtering edits"
+  shell:
+    """
+    module load python3
+    python3 {LIB}/filter_bam.py \
+      -f {GENOME} \
+      -b {input.bam} \
+      -e {output.edits} \
+      -r {output.reads} \
+      -s "R{wildcards.read}"\
+      -a {wildcards.ref} {wildcards.alt}
+    """
+  
+
+rule make_bwa_bams:
+  input:
+     fq = "{data}/hyperedits/{fastq}_2pass_Unmapped.out.mate{read}_filtered_{ref}to{alt}.fastq.gz",
+     fa = DBASES + "/hyperediting/ensemb85_genome_{c_ref}to{c_alt}.fasta",
+     sa = "{data}/hyperedits/{fastq}_{read}_{ref}to{alt}_gnome{c_ref}to{c_alt}.sai",
+  output:
+     bam = "{data}/hyperedits/{fastq}_{read}_{ref}to{alt}_gnome{c_ref}to{c_alt}.bam",
+     idx = "{data}/hyperedits/{fastq}_{read}_{ref}to{alt}_gnome{c_ref}to{c_alt}.bam.bai",
+  params:
+    job_name = "bwa_bam",
+    memory = "select[mem>5] rusage[mem=5]",
+  log:
+     "{data}/hyperedits/logs/{fastq}_{read}_{ref}{alt}_{c_ref}{c_alt}_bamout.txt",
+  resources: all_threads = 1 
+  message:
+    "making bams"
+  shell:
+    """
+    module load bwa
+    
+    bwa samse \
+      -n 50 \
+      {input.fa} \
+      {input.sa} \
+      {input.fq} \
+    | samtools view \
+      -bS \
+      -F 4 - \
+    | samtools sort > {output.bam}
+     
+    samtools index {output.bam}
+    
+    module unload bwa
+    """
+
+rule run_bwa:
+  input:
+     fq = "{data}/hyperedits/{fastq}_2pass_Unmapped.out.mate{read}_filtered_{ref}to{alt}.fastq.gz",
+     idx_= DBASES + "/hyperediting/ensemb85_genome_{c_ref}to{c_alt}.fasta.bwt",
+     fa = DBASES + "/hyperediting/ensemb85_genome_{c_ref}to{c_alt}.fasta",
+  output:
+     temp("{data}/hyperedits/{fastq}_{read}_{ref}to{alt}_gnome{c_ref}to{c_alt}.sai"),
+  params:
+    job_name = "bwa_run",
+    memory = "select[mem>5] rusage[mem=5]",
+  log:
+     "{data}/hyperedits/logs/{fastq}_{read}_{ref}{alt}_{c_ref}{c_alt}_align.txt",
+  threads: 6
+  resources: all_threads = 6 
+  message:
+    """running bwa on reads {wildcards.ref}to{wildcards.alt} against genome
+    {wildcards.c_ref}to{wildcards.c_alt}"""
+  shell:
+    """
+    module load bwa
+    
+    bwa aln \
+      -t {threads} \
+      -n 2 \
+      -o 0 \
+      -N \
+      {input.fa} \
+      {input.fq} \
+      -f {output}
+    module unload bwa
+    """
+
+
+rule bwa_idx:
+  input:
+     DBASES + "/hyperediting/ensemb85_genome_{ref}to{alt}.fasta",
+  output:
+     DBASES + "/hyperediting/ensemb85_genome_{ref}to{alt}.fasta.bwt"
+  params:
+    job_name = "bwa_idx",
+    memory = "select[mem>10] rusage[mem=10]",
+  log:
+     DBASES + "/hyperediting/logs/bwa_idx.txt"
+  resources: all_threads = 1 
+  message:
+    "building bwa index "
+  shell:
+    """
+    module load bwa
+    bwa index {input}
+    module unload bwa
+    """
+
+rule change_a_to_g_genome:
+  input:
+    {GENOME}
+  output:
+    DBASES + "/hyperediting/ensemb85_genome_{ref}to{alt}.fasta",
+  params:
+    job_name = "change_a_to_g",
+    memory = "select[mem>4] rusage[mem=4]",
+  log:
+    DBASES + "/hyperediting/logs/convert_fasta.txt"
+  resources: all_threads = 1 
+  shell:
+    """
+    module load gcc 
+    {LIB}/change_nt {wildcards.ref} {wildcards.alt} {input} > {output}
+    module unload gcc
+    """
+
+rule change_a_to_g:
+  input:
+    "{data}/hyperedits/{fastq}_2pass_Unmapped.out.mate{read}_filtered.fastq.gz",
+  output:
+    temp("{data}/hyperedits/{fastq}_2pass_Unmapped.out.mate{read}_filtered_{ref}to{alt}.fastq.gz"),
+  params:
+    job_name = "convert_reads",
+    memory = "select[mem>4] rusage[mem=4]",
+  log:
+    "{data}/hyperedits/logs/{fastq}_convert_reads.txt"
+  message:
+    " append original read to name and convert {wildcards.ref} to {wildcards.alt} "
+  threads: 2 # for gzip
+  resources: all_threads = 2
+  shell:
+    """
+    module load gcc 
+    {LIB}/append_read_to_name {input} > {output}.tmp
+    
+    {LIB}/change_nt {wildcards.ref} {wildcards.alt} {output}.tmp \
+      | gzip > {output}
+    rm -f {output}.tmp
+    module unload gcc
+    """
+
+
+
+rule filter_reads:
+  input:
+    "{data}/star/{fastq}_2pass_Unmapped.out.mate{read}.fastq.gz",
+  output:
+    "{data}/hyperedits/{fastq}_2pass_Unmapped.out.mate{read}_filtered.fastq.gz",
+  params:
+    job_name = "clean_reads",
+    rpt_db = DBASES + "/hyperediting/unique_simple_repeats.txt",
+    memory = "select[mem>4] rusage[mem=4]",
+  log:
+    "{data}/hyperedits/logs/{fastq}_clean_reads.txt"
+  message:
+    "cleaning reads to remove likely sequencing errors" 
+  resources: all_threads = 1
+  shell:
+    """
+ 
+    python3 {LIB}/filter_reads.py \
+       -i {input} \
+       -r {params.rpt_db} \
+       -o {output}
+    """
+

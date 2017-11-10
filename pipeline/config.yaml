@@ -1,0 +1,146 @@
+# config for RNA-Variant discovery snakemake pipeline #
+
+PICARD:
+  "~/src/picard/picard.jar"
+
+GATK:
+  "/vol1/software/modules-sw/GATK/3.5/GenomeAnalysisTK.jar"
+
+DATA: 
+  "../data"
+
+GENOME:
+  "../dbases/ensembl85/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa" 
+
+GENOME_DIR:
+  "../dbases/denovo_star_idx/"
+
+TRANSCRIPTS:
+  "../dbases/denovo_annotation/fixed.all95.gtf"
+
+ANNOTATION_DIR:
+  "../dbases/denovo_annotation/"
+
+CHROM_SIZES:
+  "../dbases/ensembl85/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa.fai" 
+
+FASTQ:
+  - brainrest/B153_3_CTTGTA_L001
+  - brainrest/B163_9_ATGTCA_L001
+  - brainrest/B30_2_GCCAAT_L001
+  - brainrest/B31_8_AGTTCC_L001
+  - brainrest/B32_14_CCGTCC_L002
+  - brainrest/B33_20_ATTCCT_L002
+  - brainrest/B34_26_GCCAAT_L003
+  - brainrest/B53_6_GATCAG_L001
+  - brainrest/B54_12_TGACCA_L002
+  - brainrest/B55_4_GTGAAA_L001
+  - brainrest/B57_18_GAGTGG_L002
+  - brainrest/B58_24_GGCTAC_L003
+  - brainrest/B59_10_GTCCGC_L001
+  - brainrest/B61_30_GATCAG_L003
+  - brainrest/B62_16_GTTTCG_L002
+  - brainrest/B64_22_ACTTGA_L003
+  - brainrest/B65_5_TTAGGC_L001
+  - brainrest/B66_28_GTGAAA_L003
+  - brainrest/B67_11_CGATGT_L002
+  - brainrest/B68_17_CGTACG_L002
+  - brainrest/B69_15_GTGGCC_L002
+  - brainrest/B70_21_ATCACG_L003
+  - brainrest/B72_23_TAGCTT_L003
+  - brainrest/B74_29_TTAGGC_L003
+  - brainrest/B77_13_CAGATC_L002
+  - brainrest/B78_27_CTTGTA_L003
+  - brainrest/B79_19_ACTGAT_L002
+  - brainrest/B80_25_ACAGTG_L003
+  - brainrest/B83_1_ACAGTG_L001
+  - brainrest/B84_7_AGTCAA_L001
+  - hypothalamus/31-H53_S35_L005
+  - hypothalamus/32-H59_S36_L005
+  - hypothalamus/33-H69_S37_L005
+  - hypothalamus/34-H65_S38_L005
+  - hypothalamus/35-H29_S39_L005
+  - hypothalamus/36-H83_S40_L005
+  - hypothalamus/37-H54_S41_L005
+  - hypothalamus/38-H62_S42_L005
+  - hypothalamus/39-H70_S43_L005
+  - hypothalamus/40-H67_S44_L005
+  - hypothalamus/41-H30_S45_L005
+  - hypothalamus/42-H84_S46_L005
+  - hypothalamus/43-H57_S47_L005
+  - hypothalamus/44-H64_S48_L005
+  - hypothalamus/45-H78_S49_L005
+  - hypothalamus/46-H68_S59_L008
+  - hypothalamus/47-H31_S60_L008
+  - hypothalamus/48-H77_S61_L008
+  - hypothalamus/49-H60_S62_L008
+  - hypothalamus/50-H66_S63_L008
+  - hypothalamus/51-H153_S64_L008
+  - hypothalamus/52-H72_S65_L008
+  - hypothalamus/53-H33_S66_L008
+  - hypothalamus/54-H79_S67_L008
+  - hypothalamus/55-H61_S68_L008
+  - hypothalamus/56-H164_S69_L008
+  - hypothalamus/57-H163_S70_L008
+  - hypothalamus/58-H74_S71_L008
+  - hypothalamus/59-H34_S72_L008
+  - hypothalamus/60-H80_S73_L008
+  - medulla/1-M53_S1_L001
+  - medulla/10-M67_S10_L001
+  - medulla/11-M31_S11_L001
+  - medulla/12-M84_S12_L001
+  - medulla/13-M57_S13_L001
+  - medulla/14-M62_S14_L001
+  - medulla/15-M78_S15_L001
+  - medulla/16-M68_S20_L003
+  - medulla/17-M32_S21_L003
+  - medulla/18-M77_S22_L003
+  - medulla/19-M58_S23_L003
+  - medulla/2-M55_S2_L001
+  - medulla/20-M66_S24_L003
+  - medulla/21-M153_S25_L003
+  - medulla/22-M72_S26_L003
+  - medulla/23-M33_S27_L003
+  - medulla/24-M79_S28_L003
+  - medulla/25-M61_S29_L003
+  - medulla/26-M164_S30_L003
+  - medulla/27-M163_S31_L003
+  - medulla/28-M74_S32_L003
+  - medulla/29-M34_S33_L003
+  - medulla/3-M69_S3_L001
+  - medulla/30-M80_S34_L003
+  - medulla/4-M65_S4_L001
+  - medulla/5-M30_S5_L001
+  - medulla/6-M83_S6_L001
+  - medulla/7-M54_S7_L001
+  - medulla/8-M59_S8_L001
+  - medulla/9-M70_S9_L001
+
+pos_ref:
+  - A
+  - A
+  - A  
+  - G
+  - G
+  - G
+  - C
+  - C
+  - C
+  - T
+  - T
+  - T  
+
+pos_alt: 
+  - G 
+  - C 
+  - T
+  - A
+  - C
+  - T
+  - A
+  - G 
+  - T
+  - A
+  - G
+  - C
+

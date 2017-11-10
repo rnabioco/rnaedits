@@ -1,0 +1,69 @@
+
+''' rules to make bedgraphs ''' 
+
+"""
+load the following modules prior to running
+
+module load \
+  bedtools 
+"""
+
+
+rule make_bigwigs_pe:
+  input:
+    '{data}/star/{fastq}_2pass_Aligned.sortedByCoord.out.bam'
+  output:
+    pos = '{data}/bigwigs/{fastq}.pos.bw', 
+    neg = '{data}/bigwigs/{fastq}.neg.bw', 
+  params:
+    job_name = '{fastq}.bigwigs', 
+    memory =  "select[mem>12] rusage[mem=12]",
+    tmp = '{data}/bigwigs/{fastq}.bam',
+  log:
+    '{data}/bigwigs/log/{fastq}.txt'
+  threads:
+    4
+  resources: all_threads=4
+  shell:
+    """
+    module load bedtools samtools
+
+    counts=$(samtools view -@ 3 -c -q 10 -f 0x02 {input})
+    read_counts=$(awk -v x=$counts 'BEGIN {{print 1e6 / x}}')
+    echo " done counting reads " 
+
+    # handle forward mapped fragments (Assuming first mate is reverse)
+    samtools view -b -f 128 -F 16 -@ 3 {input} > {output.pos}.fwd1.tmp.bam
+    samtools view -b -f 64 -F 32 -@ 3 {input} > {output.pos}.fwd2.tmp.bam
+    samtools merge -f {output.pos}.fwd.tmp.bam {output.pos}.fwd1.tmp.bam {output.pos}.fwd2.tmp.bam
+    samtools view -hbq 10 -@ 3 {output.pos}.fwd.tmp.bam | \
+      samtools sort -@ 3 -m 2G -T {params.tmp} - | \
+      bedtools genomecov -ibam - \
+      -g {CHROM_SIZES} \
+      -bg \
+      -split \
+      -scale $read_counts | \
+      sort -k1,1 -k2,2n - > '{output.pos}.sorted.bg'
+   
+    # handle reverse mapped fragments (Assuming first mate is forward)
+    samtools view -b -f 144 -@ 3 {input} > {output.pos}.rev1.tmp.bam
+    samtools view -b -f 96 -@ 3 {input} > {output.pos}.rev2.tmp.bam
+    samtools merge -f {output.pos}.rev.tmp.bam {output.pos}.rev1.tmp.bam {output.pos}.rev2.tmp.bam
+    samtools view -hbq 10 -@ 3 {output.pos}.rev.tmp.bam | \
+      samtools sort -@ 3 -m 2G -T {params.tmp} - | \
+      bedtools genomecov -ibam - \
+      -g {CHROM_SIZES} \
+      -bg \
+      -split \
+      -scale $read_counts | \
+      sort -k1,1 -k2,2n - > '{output.neg}.sorted.bg'
+ 
+    bedGraphToBigWig '{output.pos}.sorted.bg' {CHROM_SIZES} {output.pos}
+    bedGraphToBigWig '{output.neg}.sorted.bg' {CHROM_SIZES} {output.neg}
+    
+    rm '{output.pos}.sorted.bg' '{output.neg}.sorted.bg' '{params.tmp}'
+    rm '{output.pos}.fwd1.tmp.bam' '{output.pos}.fwd2.tmp.bam' '{output.pos}.rev1.tmp.bam' '{output.pos}.rev2.tmp.bam'
+    rm '{output.pos}.fwd.tmp.bam' '{output.pos}.rev.tmp.bam'
+    
+    """
+

@@ -1,0 +1,67 @@
+""" process fastqs for kallisto alignment """
+
+rule kallisto:
+  input:
+    FQ1 = "{data}/raw_data/{fastq}_R1_001.fastq.gz",
+    FQ2 = "{data}/raw_data/{fastq}_R2_001.fastq.gz",
+    idx =
+    DBASES + "/kallisto_idx/Ictidomys_tridecemlineatus.spetri2.denovo.kallisto.idx"
+  output:
+    abundance = "{data}/kallisto_aln/{fastq}/abundance.tsv",
+  params:
+    out_dir = "{data}/kallisto_aln/{fastq}/",
+    job_name = "{data}.kallisto",
+    memory =  "select[mem>8] rusage[mem=8]"
+  log: "{data}/kallisto_aln/logs/alignment/{fastq})log.txt"
+  threads: 6
+  shell:
+    """
+    module load kallisto
+    kallisto quant \
+      -i {input.idx} \
+      -o {params.out_dir} \
+      {input.FQ1} {input.FQ2} \
+      -b 100 --rf-stranded \
+      -t {threads}
+    module unload kallisto
+    """
+
+
+rule kallisto_idx:
+  input:
+    DBASES + "/kallisto_idx/transcripts.fa"
+  output:
+    DBASES + "/kallisto_idx/Ictidomys_tridecemlineatus.spetri2.denovo.kallisto.idx"
+  params:
+    job_name = 'kallisto_idx',
+    memory =  "select[mem>8] rusage[mem=8]"
+  log: DATA + "/kallisto_aln/logs/idx_log.txt"
+  shell:
+    """
+    module load kallisto
+    kallisto index -i {output} {input}
+    module unload kallisto
+    """
+
+
+rule get_transcript_fasta:
+  output:
+    DBASES + "/kallisto_idx/transcripts.fa"
+  params:
+    job_name = 'fasta',
+    memory =  "select[mem>4] rusage[mem=4]"
+  log: DATA + "/kallisto_aln/logs/gtf_to_fasta_log.txt"
+  shell:
+    """
+    module load bedtools 
+    module load ucsc
+    gtfToGenePred {TRANSCRIPTS} {TRANSCRIPTS}.gp
+    genePredToBed {TRANSCRIPTS}.gp {TRANSCRIPTS}.bed
+    bedtools getfasta -fi {GENOME} \
+      -name \
+      -s \
+      -split \
+      -bed {TRANSCRIPTS}.bed \
+      > {output}
+    """
+
