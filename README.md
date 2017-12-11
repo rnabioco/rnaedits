@@ -1,11 +1,6 @@
 ## rnaedits
 
-  Pipeline and scripts for manuscript:
-
->Kent A. Riemondy, Austin E. Gillen, Emily White, Lori K. Bogren, Jay R. Hesselberth, Sandra L. Martin
- Dynamic Temperature-Sensitive A-to-I RNA editing in the Brain of a Heterothermic Mammal during Hibernation (to be submitted)
-
-
+  Pipeline and scripts for detecting rna editing
 
 ### Trackhub
 
