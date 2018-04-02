@@ -19,7 +19,7 @@
   
   2) paste the following link into the `My Hubs` URL input box. 
   
-  `http://de.cyverse.org/anon-files/iplant/home/kriemo/data/trackhubs/tls85/hub.txt`
+  `http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/hub.txt`  
   
   3) click add hub
 

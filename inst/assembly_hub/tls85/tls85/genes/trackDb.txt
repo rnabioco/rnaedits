@@ -1,0 +1,24 @@
+track ensGene
+shortLabel Ensembl genes
+longLabel Ensembl genes from release 85 TLS
+group genes
+priority 40
+visibility pack
+color 150,0,0
+type bigBed 12 . 
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/genes/Ictidomys_tridecemlineatus.spetri2.85.bb 
+searchIndex name
+searchTrix http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/genes/gene_names.ix 
+
+track denovo 
+shortLabel denovo_annotations
+longLabel Stringtie Taco transcriptome release 85 TLS
+group genes 
+priority 40
+visibility pack
+color 150,0,0
+type bigBed 12 . 
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/genes/fixed.all95.bb
+searchIndex name
+searchTrix http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/genes/fixed.all95.nameIndex.ix
+

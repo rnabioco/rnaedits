@@ -1,0 +1,9 @@
+name genes
+label Squirrel Transcriptome Data (Riemondy et al.)
+priority 1
+defaultIsClosed 0
+
+name martin_data 
+label Squirrel RNA editing (Riemondy et al.)
+priority 2
+defaultIsClosed 0

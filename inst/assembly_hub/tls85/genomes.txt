@@ -1,0 +1,9 @@
+genome tls_ensembl85 
+trackDb http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/trackDb.txt 
+groups http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/groups.txt 
+description All contigs from ensembl85 
+twoBitPath http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.2bit 
+organism Ictidomys tridecemlineatus
+defaultPos JH393386.1:3911619-3913688
+orderKey 4700
+scientificName Ictidomys tridecemlineatus

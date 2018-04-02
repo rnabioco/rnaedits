@@ -1,0 +1,109 @@
+track repeatMasker_
+compositeTrack on
+shortLabel RepeatMasker
+longLabel Repeating Elements by RepeatMasker
+group genes
+priority 149.1
+visibility dense
+type bed 3 .
+noInherit on
+
+    track repeatMaskerSINE_
+    parent repeatMasker_
+    shortLabel SINE
+    longLabel SINE Repeating Elements by RepeatMasker
+    priority 1
+    spectrum on
+    maxWindowToDraw 10000000
+    colorByStrand 50,50,150 150,50,50
+    type bigBed 6 +
+    bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/repeats/rmsk.SINE.bb
+
+    track repeatMaskerLINE_
+    parent repeatMasker_
+    shortLabel LINE
+    longLabel LINE Repeating Elements by RepeatMasker
+    priority 2
+    spectrum on
+    maxWindowToDraw 10000000
+    colorByStrand 50,50,150 150,50,50
+    type bigBed 6 +
+    bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/repeats/rmsk.LINE.bb
+
+    track repeatMaskerLTR_
+    parent repeatMasker_
+    shortLabel LTR
+    longLabel LTR Repeating Elements by RepeatMasker
+    priority 3
+    spectrum on
+    maxWindowToDraw 10000000
+    colorByStrand 50,50,150 150,50,50
+    type bigBed 6 +
+    bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/repeats/rmsk.LTR.bb
+
+    track repeatMaskerDNA_
+    parent repeatMasker_
+    shortLabel DNA
+    longLabel DNA Repeating Elements by RepeatMasker
+    priority 4
+    spectrum on
+    maxWindowToDraw 10000000
+    colorByStrand 50,50,150 150,50,50
+    type bigBed 6 +
+    bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/repeats/rmsk.DNA.bb
+
+    track repeatMaskerSimple_
+    parent repeatMasker_
+    shortLabel Simple
+    longLabel Simple Repeating Elements by RepeatMasker
+    priority 5
+    spectrum on
+    maxWindowToDraw 10000000
+    colorByStrand 50,50,150 150,50,50
+    type bigBed 6 +
+    bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/repeats/rmsk.Simple.bb
+
+    track repeatMaskerLowComplexity_
+    parent repeatMasker_
+    shortLabel Low Complexity
+    longLabel Low Complexity Repeating Elements by RepeatMasker
+    priority 6
+    spectrum on
+    maxWindowToDraw 10000000
+    colorByStrand 50,50,150 150,50,50
+    type bigBed 6 +
+    bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/repeats/rmsk.Low_complexity.bb
+
+    track repeatMaskerSatellite_
+    parent repeatMasker_
+    shortLabel Satellite
+    longLabel Satellite Repeating Elements by RepeatMasker
+    priority 7
+    spectrum on
+    maxWindowToDraw 10000000
+    colorByStrand 50,50,150 150,50,50
+    type bigBed 6 +
+    bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/repeats/rmsk.Satellite.bb
+
+    track repeatMaskerRNA_
+    parent repeatMasker_
+    shortLabel RNA
+    longLabel RNA Repeating Elements by RepeatMasker
+    priority 8
+    spectrum on
+    maxWindowToDraw 10000000
+    colorByStrand 50,50,150 150,50,50
+    type bigBed 6 +
+    bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/repeats/rmsk.RNA.bb
+
+    track repeatMaskerSimple_repeat_
+    parent repeatMasker_
+    shortLabel Other
+    longLabel Simple_repeat Repeating Elements by RepeatMasker
+    priority 9
+    spectrum on
+    maxWindowToDraw 10000000
+    colorByStrand 50,50,150 150,50,50
+    type bigBed 6 +
+    bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/repeats/rmsk.Simple_repeat.bb
+

@@ -1,0 +1,5 @@
+hub tls_ensembl 
+shortLabel tls_assembly 
+longLabel tls85 ensembl genome 
+genomesFile http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/genomes.txt 
+email kent.riemondy@gmail.com

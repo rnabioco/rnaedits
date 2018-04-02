@@ -1,0 +1,1825 @@
+
+track BigWigs
+superTrack on
+group martin_data
+shortLabel bigWigs
+longLabel bigWigs from RNA-Seq of animals at varying stages of hibernation
+
+    track rnaseq_bigwigs
+    parent BigWigs
+    compositeTrack on
+    shortLabel RNA-Seq
+    longLabel bigWigs from RNA-Seq alignment data
+    type bigWig
+    autoScale on
+    windowingFunction mean
+    visibility hide 
+    maxHeightPixels 100:30:8
+    subGroup1 state Hibernation_State A_SA=Summer_Active B_IBA=Interbout_Arousal C_Ent=Entrance D_LT=Late_Torpor E_Ar=Arousal F_SpD=Spring_D
+    subGroup2 region Brain_Region M=Medulla B=Brain_the_rest H=Hypothamalus
+    subGroup3 rep Replicate R1=rep1 R2=rep2 R3=rep3 R4=rep4 R5=rep5
+    subGroup4 strand Strand pos=Positive neg=Negative
+    dimensions dimX=region dimY=state dimA=strand
+    dimensionXchecked Medulla
+    sortOrder strand=- state=+
+
+track 11-M31_S11_L001.neg
+parent rnaseq_bigwigs
+shortLabel 11-M31_S11_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/11-M31_S11_L001.neg.bw
+longLabel  11-M31_S11_L001.neg  from region Medulla in state SA replicate 1
+subGroups state=A_SA region=M replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 11-M31_S11_L001.pos
+parent rnaseq_bigwigs
+shortLabel 11-M31_S11_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/11-M31_S11_L001.pos.bw
+longLabel  11-M31_S11_L001.pos  from region Medulla in state SA replicate 1
+subGroups state=A_SA region=M replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 17-M32_S21_L003.neg
+parent rnaseq_bigwigs
+shortLabel 17-M32_S21_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/17-M32_S21_L003.neg.bw
+longLabel  17-M32_S21_L003.neg  from region Medulla in state SA replicate 2
+subGroups state=A_SA region=M replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 17-M32_S21_L003.pos
+parent rnaseq_bigwigs
+shortLabel 17-M32_S21_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/17-M32_S21_L003.pos.bw
+longLabel  17-M32_S21_L003.pos  from region Medulla in state SA replicate 2
+subGroups state=A_SA region=M replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 23-M33_S27_L003.neg
+parent rnaseq_bigwigs
+shortLabel 23-M33_S27_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/23-M33_S27_L003.neg.bw
+longLabel  23-M33_S27_L003.neg  from region Medulla in state SA replicate 3
+subGroups state=A_SA region=M replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 23-M33_S27_L003.pos
+parent rnaseq_bigwigs
+shortLabel 23-M33_S27_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/23-M33_S27_L003.pos.bw
+longLabel  23-M33_S27_L003.pos  from region Medulla in state SA replicate 3
+subGroups state=A_SA region=M replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 29-M34_S33_L003.neg
+parent rnaseq_bigwigs
+shortLabel 29-M34_S33_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/29-M34_S33_L003.neg.bw
+longLabel  29-M34_S33_L003.neg  from region Medulla in state SA replicate 4
+subGroups state=A_SA region=M replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 29-M34_S33_L003.pos
+parent rnaseq_bigwigs
+shortLabel 29-M34_S33_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/29-M34_S33_L003.pos.bw
+longLabel  29-M34_S33_L003.pos  from region Medulla in state SA replicate 4
+subGroups state=A_SA region=M replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 35-H29_S39_L005.neg
+parent rnaseq_bigwigs
+shortLabel 35-H29_S39_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/35-H29_S39_L005.neg.bw
+longLabel  35-H29_S39_L005.neg  from region Hypothalamus in state SA replicate 1
+subGroups state=A_SA region=H replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 35-H29_S39_L005.pos
+parent rnaseq_bigwigs
+shortLabel 35-H29_S39_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/35-H29_S39_L005.pos.bw
+longLabel  35-H29_S39_L005.pos  from region Hypothalamus in state SA replicate 1
+subGroups state=A_SA region=H replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 41-H30_S45_L005.neg
+parent rnaseq_bigwigs
+shortLabel 41-H30_S45_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/41-H30_S45_L005.neg.bw
+longLabel  41-H30_S45_L005.neg  from region Hypothalamus in state SA replicate 2
+subGroups state=A_SA region=H replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 41-H30_S45_L005.pos
+parent rnaseq_bigwigs
+shortLabel 41-H30_S45_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/41-H30_S45_L005.pos.bw
+longLabel  41-H30_S45_L005.pos  from region Hypothalamus in state SA replicate 2
+subGroups state=A_SA region=H replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 47-H31_S60_L008.neg
+parent rnaseq_bigwigs
+shortLabel 47-H31_S60_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/47-H31_S60_L008.neg.bw
+longLabel  47-H31_S60_L008.neg  from region Hypothalamus in state SA replicate 3
+subGroups state=A_SA region=H replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 47-H31_S60_L008.pos
+parent rnaseq_bigwigs
+shortLabel 47-H31_S60_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/47-H31_S60_L008.pos.bw
+longLabel  47-H31_S60_L008.pos  from region Hypothalamus in state SA replicate 3
+subGroups state=A_SA region=H replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 5-M30_S5_L001.neg
+parent rnaseq_bigwigs
+shortLabel 5-M30_S5_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/5-M30_S5_L001.neg.bw
+longLabel  5-M30_S5_L001.neg  from region Medulla in state SA replicate 5
+subGroups state=A_SA region=M replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 5-M30_S5_L001.pos
+parent rnaseq_bigwigs
+shortLabel 5-M30_S5_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/5-M30_S5_L001.pos.bw
+longLabel  5-M30_S5_L001.pos  from region Medulla in state SA replicate 5
+subGroups state=A_SA region=M replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 53-H33_S66_L008.neg
+parent rnaseq_bigwigs
+shortLabel 53-H33_S66_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/53-H33_S66_L008.neg.bw
+longLabel  53-H33_S66_L008.neg  from region Hypothalamus in state SA replicate 4
+subGroups state=A_SA region=H replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 53-H33_S66_L008.pos
+parent rnaseq_bigwigs
+shortLabel 53-H33_S66_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/53-H33_S66_L008.pos.bw
+longLabel  53-H33_S66_L008.pos  from region Hypothalamus in state SA replicate 4
+subGroups state=A_SA region=H replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 59-H34_S72_L008.neg
+parent rnaseq_bigwigs
+shortLabel 59-H34_S72_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/59-H34_S72_L008.neg.bw
+longLabel  59-H34_S72_L008.neg  from region Hypothalamus in state SA replicate 5
+subGroups state=A_SA region=H replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 59-H34_S72_L008.pos
+parent rnaseq_bigwigs
+shortLabel 59-H34_S72_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/59-H34_S72_L008.pos.bw
+longLabel  59-H34_S72_L008.pos  from region Hypothalamus in state SA replicate 5
+subGroups state=A_SA region=H replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track B30_2_GCCAAT_L001.neg
+parent rnaseq_bigwigs
+shortLabel B30_2_GCCAAT_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/B30_2_GCCAAT_L001.neg.bw
+longLabel  B30_2_GCCAAT_L001.neg  from region Brain_the_rest in state SA replicate 1
+subGroups state=A_SA region=B replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track B30_2_GCCAAT_L001.pos
+parent rnaseq_bigwigs
+shortLabel B30_2_GCCAAT_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/B30_2_GCCAAT_L001.pos.bw
+longLabel  B30_2_GCCAAT_L001.pos  from region Brain_the_rest in state SA replicate 1
+subGroups state=A_SA region=B replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track B31_8_AGTTCC_L001.neg
+parent rnaseq_bigwigs
+shortLabel B31_8_AGTTCC_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/B31_8_AGTTCC_L001.neg.bw
+longLabel  B31_8_AGTTCC_L001.neg  from region Brain_the_rest in state SA replicate 2
+subGroups state=A_SA region=B replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track B31_8_AGTTCC_L001.pos
+parent rnaseq_bigwigs
+shortLabel B31_8_AGTTCC_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/B31_8_AGTTCC_L001.pos.bw
+longLabel  B31_8_AGTTCC_L001.pos  from region Brain_the_rest in state SA replicate 2
+subGroups state=A_SA region=B replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track B32_14_CCGTCC_L002.neg
+parent rnaseq_bigwigs
+shortLabel B32_14_CCGTCC_L002.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/B32_14_CCGTCC_L002.neg.bw
+longLabel  B32_14_CCGTCC_L002.neg  from region Brain_the_rest in state SA replicate 3
+subGroups state=A_SA region=B replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track B32_14_CCGTCC_L002.pos
+parent rnaseq_bigwigs
+shortLabel B32_14_CCGTCC_L002.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/B32_14_CCGTCC_L002.pos.bw
+longLabel  B32_14_CCGTCC_L002.pos  from region Brain_the_rest in state SA replicate 3
+subGroups state=A_SA region=B replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track B33_20_ATTCCT_L002.neg
+parent rnaseq_bigwigs
+shortLabel B33_20_ATTCCT_L002.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/B33_20_ATTCCT_L002.neg.bw
+longLabel  B33_20_ATTCCT_L002.neg  from region Brain_the_rest in state SA replicate 4
+subGroups state=A_SA region=B replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track B33_20_ATTCCT_L002.pos
+parent rnaseq_bigwigs
+shortLabel B33_20_ATTCCT_L002.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/B33_20_ATTCCT_L002.pos.bw
+longLabel  B33_20_ATTCCT_L002.pos  from region Brain_the_rest in state SA replicate 4
+subGroups state=A_SA region=B replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track B34_26_GCCAAT_L003.neg
+parent rnaseq_bigwigs
+shortLabel B34_26_GCCAAT_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/B34_26_GCCAAT_L003.neg.bw
+longLabel  B34_26_GCCAAT_L003.neg  from region Brain_the_rest in state SA replicate 5
+subGroups state=A_SA region=B replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track B34_26_GCCAAT_L003.pos
+parent rnaseq_bigwigs
+shortLabel B34_26_GCCAAT_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SA/B34_26_GCCAAT_L003.pos.bw
+longLabel  B34_26_GCCAAT_L003.pos  from region Brain_the_rest in state SA replicate 5
+subGroups state=A_SA region=B replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 255,0,0
+type bigWig
+
+track 15-M78_S15_L001.neg
+parent rnaseq_bigwigs
+shortLabel 15-M78_S15_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/15-M78_S15_L001.neg.bw
+longLabel  15-M78_S15_L001.neg  from region Medulla in state IBA replicate 1
+subGroups state=B_IBA region=M replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 15-M78_S15_L001.pos
+parent rnaseq_bigwigs
+shortLabel 15-M78_S15_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/15-M78_S15_L001.pos.bw
+longLabel  15-M78_S15_L001.pos  from region Medulla in state IBA replicate 1
+subGroups state=B_IBA region=M replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 21-M153_S25_L003.neg
+parent rnaseq_bigwigs
+shortLabel 21-M153_S25_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/21-M153_S25_L003.neg.bw
+longLabel  21-M153_S25_L003.neg  from region Medulla in state IBA replicate 2
+subGroups state=B_IBA region=M replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 21-M153_S25_L003.pos
+parent rnaseq_bigwigs
+shortLabel 21-M153_S25_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/21-M153_S25_L003.pos.bw
+longLabel  21-M153_S25_L003.pos  from region Medulla in state IBA replicate 2
+subGroups state=B_IBA region=M replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 27-M163_S31_L003.neg
+parent rnaseq_bigwigs
+shortLabel 27-M163_S31_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/27-M163_S31_L003.neg.bw
+longLabel  27-M163_S31_L003.neg  from region Medulla in state IBA replicate 3
+subGroups state=B_IBA region=M replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 27-M163_S31_L003.pos
+parent rnaseq_bigwigs
+shortLabel 27-M163_S31_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/27-M163_S31_L003.pos.bw
+longLabel  27-M163_S31_L003.pos  from region Medulla in state IBA replicate 3
+subGroups state=B_IBA region=M replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 3-M69_S3_L001.neg
+parent rnaseq_bigwigs
+shortLabel 3-M69_S3_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/3-M69_S3_L001.neg.bw
+longLabel  3-M69_S3_L001.neg  from region Medulla in state IBA replicate 4
+subGroups state=B_IBA region=M replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 3-M69_S3_L001.pos
+parent rnaseq_bigwigs
+shortLabel 3-M69_S3_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/3-M69_S3_L001.pos.bw
+longLabel  3-M69_S3_L001.pos  from region Medulla in state IBA replicate 4
+subGroups state=B_IBA region=M replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 33-H69_S37_L005.neg
+parent rnaseq_bigwigs
+shortLabel 33-H69_S37_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/33-H69_S37_L005.neg.bw
+longLabel  33-H69_S37_L005.neg  from region Hypothalamus in state IBA replicate 1
+subGroups state=B_IBA region=H replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 33-H69_S37_L005.pos
+parent rnaseq_bigwigs
+shortLabel 33-H69_S37_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/33-H69_S37_L005.pos.bw
+longLabel  33-H69_S37_L005.pos  from region Hypothalamus in state IBA replicate 1
+subGroups state=B_IBA region=H replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 39-H70_S43_L005.neg
+parent rnaseq_bigwigs
+shortLabel 39-H70_S43_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/39-H70_S43_L005.neg.bw
+longLabel  39-H70_S43_L005.neg  from region Hypothalamus in state IBA replicate 2
+subGroups state=B_IBA region=H replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 39-H70_S43_L005.pos
+parent rnaseq_bigwigs
+shortLabel 39-H70_S43_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/39-H70_S43_L005.pos.bw
+longLabel  39-H70_S43_L005.pos  from region Hypothalamus in state IBA replicate 2
+subGroups state=B_IBA region=H replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 45-H78_S49_L005.neg
+parent rnaseq_bigwigs
+shortLabel 45-H78_S49_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/45-H78_S49_L005.neg.bw
+longLabel  45-H78_S49_L005.neg  from region Hypothalamus in state IBA replicate 3
+subGroups state=B_IBA region=H replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 45-H78_S49_L005.pos
+parent rnaseq_bigwigs
+shortLabel 45-H78_S49_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/45-H78_S49_L005.pos.bw
+longLabel  45-H78_S49_L005.pos  from region Hypothalamus in state IBA replicate 3
+subGroups state=B_IBA region=H replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 51-H153_S64_L008.neg
+parent rnaseq_bigwigs
+shortLabel 51-H153_S64_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/51-H153_S64_L008.neg.bw
+longLabel  51-H153_S64_L008.neg  from region Hypothalamus in state IBA replicate 4
+subGroups state=B_IBA region=H replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 51-H153_S64_L008.pos
+parent rnaseq_bigwigs
+shortLabel 51-H153_S64_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/51-H153_S64_L008.pos.bw
+longLabel  51-H153_S64_L008.pos  from region Hypothalamus in state IBA replicate 4
+subGroups state=B_IBA region=H replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 57-H163_S70_L008.neg
+parent rnaseq_bigwigs
+shortLabel 57-H163_S70_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/57-H163_S70_L008.neg.bw
+longLabel  57-H163_S70_L008.neg  from region Hypothalamus in state IBA replicate 5
+subGroups state=B_IBA region=H replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 57-H163_S70_L008.pos
+parent rnaseq_bigwigs
+shortLabel 57-H163_S70_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/57-H163_S70_L008.pos.bw
+longLabel  57-H163_S70_L008.pos  from region Hypothalamus in state IBA replicate 5
+subGroups state=B_IBA region=H replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 9-M70_S9_L001.neg
+parent rnaseq_bigwigs
+shortLabel 9-M70_S9_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/9-M70_S9_L001.neg.bw
+longLabel  9-M70_S9_L001.neg  from region Medulla in state IBA replicate 5
+subGroups state=B_IBA region=M replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 9-M70_S9_L001.pos
+parent rnaseq_bigwigs
+shortLabel 9-M70_S9_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/9-M70_S9_L001.pos.bw
+longLabel  9-M70_S9_L001.pos  from region Medulla in state IBA replicate 5
+subGroups state=B_IBA region=M replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track B153_3_CTTGTA_L001.neg
+parent rnaseq_bigwigs
+shortLabel B153_3_CTTGTA_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/B153_3_CTTGTA_L001.neg.bw
+longLabel  B153_3_CTTGTA_L001.neg  from region Brain_the_rest in state IBA replicate 1
+subGroups state=B_IBA region=B replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track B153_3_CTTGTA_L001.pos
+parent rnaseq_bigwigs
+shortLabel B153_3_CTTGTA_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/B153_3_CTTGTA_L001.pos.bw
+longLabel  B153_3_CTTGTA_L001.pos  from region Brain_the_rest in state IBA replicate 1
+subGroups state=B_IBA region=B replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track B163_9_ATGTCA_L001.neg
+parent rnaseq_bigwigs
+shortLabel B163_9_ATGTCA_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/B163_9_ATGTCA_L001.neg.bw
+longLabel  B163_9_ATGTCA_L001.neg  from region Brain_the_rest in state IBA replicate 2
+subGroups state=B_IBA region=B replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track B163_9_ATGTCA_L001.pos
+parent rnaseq_bigwigs
+shortLabel B163_9_ATGTCA_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/B163_9_ATGTCA_L001.pos.bw
+longLabel  B163_9_ATGTCA_L001.pos  from region Brain_the_rest in state IBA replicate 2
+subGroups state=B_IBA region=B replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track B69_15_GTGGCC_L002.neg
+parent rnaseq_bigwigs
+shortLabel B69_15_GTGGCC_L002.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/B69_15_GTGGCC_L002.neg.bw
+longLabel  B69_15_GTGGCC_L002.neg  from region Brain_the_rest in state IBA replicate 3
+subGroups state=B_IBA region=B replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track B69_15_GTGGCC_L002.pos
+parent rnaseq_bigwigs
+shortLabel B69_15_GTGGCC_L002.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/B69_15_GTGGCC_L002.pos.bw
+longLabel  B69_15_GTGGCC_L002.pos  from region Brain_the_rest in state IBA replicate 3
+subGroups state=B_IBA region=B replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track B70_21_ATCACG_L003.neg
+parent rnaseq_bigwigs
+shortLabel B70_21_ATCACG_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/B70_21_ATCACG_L003.neg.bw
+longLabel  B70_21_ATCACG_L003.neg  from region Brain_the_rest in state IBA replicate 4
+subGroups state=B_IBA region=B replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track B70_21_ATCACG_L003.pos
+parent rnaseq_bigwigs
+shortLabel B70_21_ATCACG_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/B70_21_ATCACG_L003.pos.bw
+longLabel  B70_21_ATCACG_L003.pos  from region Brain_the_rest in state IBA replicate 4
+subGroups state=B_IBA region=B replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track B78_27_CTTGTA_L003.neg
+parent rnaseq_bigwigs
+shortLabel B78_27_CTTGTA_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/B78_27_CTTGTA_L003.neg.bw
+longLabel  B78_27_CTTGTA_L003.neg  from region Brain_the_rest in state IBA replicate 5
+subGroups state=B_IBA region=B replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track B78_27_CTTGTA_L003.pos
+parent rnaseq_bigwigs
+shortLabel B78_27_CTTGTA_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/IBA/B78_27_CTTGTA_L003.pos.bw
+longLabel  B78_27_CTTGTA_L003.pos  from region Brain_the_rest in state IBA replicate 5
+subGroups state=B_IBA region=B replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 67,205,128
+type bigWig
+
+track 14-M62_S14_L001.neg
+parent rnaseq_bigwigs
+shortLabel 14-M62_S14_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/14-M62_S14_L001.neg.bw
+longLabel  14-M62_S14_L001.neg  from region Medulla in state Ent replicate 1
+subGroups state=C_Ent region=M replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 14-M62_S14_L001.pos
+parent rnaseq_bigwigs
+shortLabel 14-M62_S14_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/14-M62_S14_L001.pos.bw
+longLabel  14-M62_S14_L001.pos  from region Medulla in state Ent replicate 1
+subGroups state=C_Ent region=M replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 2-M55_S2_L001.neg
+parent rnaseq_bigwigs
+shortLabel 2-M55_S2_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/2-M55_S2_L001.neg.bw
+longLabel  2-M55_S2_L001.neg  from region Medulla in state Ent replicate 2
+subGroups state=C_Ent region=M replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 2-M55_S2_L001.pos
+parent rnaseq_bigwigs
+shortLabel 2-M55_S2_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/2-M55_S2_L001.pos.bw
+longLabel  2-M55_S2_L001.pos  from region Medulla in state Ent replicate 2
+subGroups state=C_Ent region=M replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 20-M66_S24_L003.neg
+parent rnaseq_bigwigs
+shortLabel 20-M66_S24_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/20-M66_S24_L003.neg.bw
+longLabel  20-M66_S24_L003.neg  from region Medulla in state Ent replicate 3
+subGroups state=C_Ent region=M replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 20-M66_S24_L003.pos
+parent rnaseq_bigwigs
+shortLabel 20-M66_S24_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/20-M66_S24_L003.pos.bw
+longLabel  20-M66_S24_L003.pos  from region Medulla in state Ent replicate 3
+subGroups state=C_Ent region=M replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 26-M164_S30_L003.neg
+parent rnaseq_bigwigs
+shortLabel 26-M164_S30_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/26-M164_S30_L003.neg.bw
+longLabel  26-M164_S30_L003.neg  from region Medulla in state Ent replicate 4
+subGroups state=C_Ent region=M replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 26-M164_S30_L003.pos
+parent rnaseq_bigwigs
+shortLabel 26-M164_S30_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/26-M164_S30_L003.pos.bw
+longLabel  26-M164_S30_L003.pos  from region Medulla in state Ent replicate 4
+subGroups state=C_Ent region=M replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 32-H59_S36_L005.neg
+parent rnaseq_bigwigs
+shortLabel 32-H59_S36_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/32-H59_S36_L005.neg.bw
+longLabel  32-H59_S36_L005.neg  from region Hypothalamus in state Ent replicate 1
+subGroups state=C_Ent region=H replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 32-H59_S36_L005.pos
+parent rnaseq_bigwigs
+shortLabel 32-H59_S36_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/32-H59_S36_L005.pos.bw
+longLabel  32-H59_S36_L005.pos  from region Hypothalamus in state Ent replicate 1
+subGroups state=C_Ent region=H replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 38-H62_S42_L005.neg
+parent rnaseq_bigwigs
+shortLabel 38-H62_S42_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/38-H62_S42_L005.neg.bw
+longLabel  38-H62_S42_L005.neg  from region Hypothalamus in state Ent replicate 2
+subGroups state=C_Ent region=H replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 38-H62_S42_L005.pos
+parent rnaseq_bigwigs
+shortLabel 38-H62_S42_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/38-H62_S42_L005.pos.bw
+longLabel  38-H62_S42_L005.pos  from region Hypothalamus in state Ent replicate 2
+subGroups state=C_Ent region=H replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 44-H64_S48_L005.neg
+parent rnaseq_bigwigs
+shortLabel 44-H64_S48_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/44-H64_S48_L005.neg.bw
+longLabel  44-H64_S48_L005.neg  from region Hypothalamus in state Ent replicate 3
+subGroups state=C_Ent region=H replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 44-H64_S48_L005.pos
+parent rnaseq_bigwigs
+shortLabel 44-H64_S48_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/44-H64_S48_L005.pos.bw
+longLabel  44-H64_S48_L005.pos  from region Hypothalamus in state Ent replicate 3
+subGroups state=C_Ent region=H replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 50-H66_S63_L008.neg
+parent rnaseq_bigwigs
+shortLabel 50-H66_S63_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/50-H66_S63_L008.neg.bw
+longLabel  50-H66_S63_L008.neg  from region Hypothalamus in state Ent replicate 4
+subGroups state=C_Ent region=H replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 50-H66_S63_L008.pos
+parent rnaseq_bigwigs
+shortLabel 50-H66_S63_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/50-H66_S63_L008.pos.bw
+longLabel  50-H66_S63_L008.pos  from region Hypothalamus in state Ent replicate 4
+subGroups state=C_Ent region=H replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 56-H164_S69_L008.neg
+parent rnaseq_bigwigs
+shortLabel 56-H164_S69_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/56-H164_S69_L008.neg.bw
+longLabel  56-H164_S69_L008.neg  from region Hypothalamus in state Ent replicate 5
+subGroups state=C_Ent region=H replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 56-H164_S69_L008.pos
+parent rnaseq_bigwigs
+shortLabel 56-H164_S69_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/56-H164_S69_L008.pos.bw
+longLabel  56-H164_S69_L008.pos  from region Hypothalamus in state Ent replicate 5
+subGroups state=C_Ent region=H replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 8-M59_S8_L001.neg
+parent rnaseq_bigwigs
+shortLabel 8-M59_S8_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/8-M59_S8_L001.neg.bw
+longLabel  8-M59_S8_L001.neg  from region Medulla in state Ent replicate 5
+subGroups state=C_Ent region=M replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 8-M59_S8_L001.pos
+parent rnaseq_bigwigs
+shortLabel 8-M59_S8_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/8-M59_S8_L001.pos.bw
+longLabel  8-M59_S8_L001.pos  from region Medulla in state Ent replicate 5
+subGroups state=C_Ent region=M replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track B55_4_GTGAAA_L001.neg
+parent rnaseq_bigwigs
+shortLabel B55_4_GTGAAA_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/B55_4_GTGAAA_L001.neg.bw
+longLabel  B55_4_GTGAAA_L001.neg  from region Brain_the_rest in state Ent replicate 1
+subGroups state=C_Ent region=B replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track B55_4_GTGAAA_L001.pos
+parent rnaseq_bigwigs
+shortLabel B55_4_GTGAAA_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/B55_4_GTGAAA_L001.pos.bw
+longLabel  B55_4_GTGAAA_L001.pos  from region Brain_the_rest in state Ent replicate 1
+subGroups state=C_Ent region=B replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track B59_10_GTCCGC_L001.neg
+parent rnaseq_bigwigs
+shortLabel B59_10_GTCCGC_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/B59_10_GTCCGC_L001.neg.bw
+longLabel  B59_10_GTCCGC_L001.neg  from region Brain_the_rest in state Ent replicate 2
+subGroups state=C_Ent region=B replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track B59_10_GTCCGC_L001.pos
+parent rnaseq_bigwigs
+shortLabel B59_10_GTCCGC_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/B59_10_GTCCGC_L001.pos.bw
+longLabel  B59_10_GTCCGC_L001.pos  from region Brain_the_rest in state Ent replicate 2
+subGroups state=C_Ent region=B replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track B62_16_GTTTCG_L002.neg
+parent rnaseq_bigwigs
+shortLabel B62_16_GTTTCG_L002.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/B62_16_GTTTCG_L002.neg.bw
+longLabel  B62_16_GTTTCG_L002.neg  from region Brain_the_rest in state Ent replicate 3
+subGroups state=C_Ent region=B replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track B62_16_GTTTCG_L002.pos
+parent rnaseq_bigwigs
+shortLabel B62_16_GTTTCG_L002.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/B62_16_GTTTCG_L002.pos.bw
+longLabel  B62_16_GTTTCG_L002.pos  from region Brain_the_rest in state Ent replicate 3
+subGroups state=C_Ent region=B replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track B64_22_ACTTGA_L003.neg
+parent rnaseq_bigwigs
+shortLabel B64_22_ACTTGA_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/B64_22_ACTTGA_L003.neg.bw
+longLabel  B64_22_ACTTGA_L003.neg  from region Brain_the_rest in state Ent replicate 4
+subGroups state=C_Ent region=B replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track B64_22_ACTTGA_L003.pos
+parent rnaseq_bigwigs
+shortLabel B64_22_ACTTGA_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/B64_22_ACTTGA_L003.pos.bw
+longLabel  B64_22_ACTTGA_L003.pos  from region Brain_the_rest in state Ent replicate 4
+subGroups state=C_Ent region=B replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track B66_28_GTGAAA_L003.neg
+parent rnaseq_bigwigs
+shortLabel B66_28_GTGAAA_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/B66_28_GTGAAA_L003.neg.bw
+longLabel  B66_28_GTGAAA_L003.neg  from region Brain_the_rest in state Ent replicate 5
+subGroups state=C_Ent region=B replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track B66_28_GTGAAA_L003.pos
+parent rnaseq_bigwigs
+shortLabel B66_28_GTGAAA_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ent/B66_28_GTGAAA_L003.pos.bw
+longLabel  B66_28_GTGAAA_L003.pos  from region Brain_the_rest in state Ent replicate 5
+subGroups state=C_Ent region=B replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 155,48,255
+type bigWig
+
+track 10-M67_S10_L001.neg
+parent rnaseq_bigwigs
+shortLabel 10-M67_S10_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/10-M67_S10_L001.neg.bw
+longLabel  10-M67_S10_L001.neg  from region Medulla in state LT replicate 1
+subGroups state=D_LT region=M replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 10-M67_S10_L001.pos
+parent rnaseq_bigwigs
+shortLabel 10-M67_S10_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/10-M67_S10_L001.pos.bw
+longLabel  10-M67_S10_L001.pos  from region Medulla in state LT replicate 1
+subGroups state=D_LT region=M replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 16-M68_S20_L003.neg
+parent rnaseq_bigwigs
+shortLabel 16-M68_S20_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/16-M68_S20_L003.neg.bw
+longLabel  16-M68_S20_L003.neg  from region Medulla in state LT replicate 2
+subGroups state=D_LT region=M replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 16-M68_S20_L003.pos
+parent rnaseq_bigwigs
+shortLabel 16-M68_S20_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/16-M68_S20_L003.pos.bw
+longLabel  16-M68_S20_L003.pos  from region Medulla in state LT replicate 2
+subGroups state=D_LT region=M replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 22-M72_S26_L003.neg
+parent rnaseq_bigwigs
+shortLabel 22-M72_S26_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/22-M72_S26_L003.neg.bw
+longLabel  22-M72_S26_L003.neg  from region Medulla in state LT replicate 3
+subGroups state=D_LT region=M replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 22-M72_S26_L003.pos
+parent rnaseq_bigwigs
+shortLabel 22-M72_S26_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/22-M72_S26_L003.pos.bw
+longLabel  22-M72_S26_L003.pos  from region Medulla in state LT replicate 3
+subGroups state=D_LT region=M replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 28-M74_S32_L003.neg
+parent rnaseq_bigwigs
+shortLabel 28-M74_S32_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/28-M74_S32_L003.neg.bw
+longLabel  28-M74_S32_L003.neg  from region Medulla in state LT replicate 4
+subGroups state=D_LT region=M replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 28-M74_S32_L003.pos
+parent rnaseq_bigwigs
+shortLabel 28-M74_S32_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/28-M74_S32_L003.pos.bw
+longLabel  28-M74_S32_L003.pos  from region Medulla in state LT replicate 4
+subGroups state=D_LT region=M replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 34-H65_S38_L005.neg
+parent rnaseq_bigwigs
+shortLabel 34-H65_S38_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/34-H65_S38_L005.neg.bw
+longLabel  34-H65_S38_L005.neg  from region Hypothalamus in state LT replicate 1
+subGroups state=D_LT region=H replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 34-H65_S38_L005.pos
+parent rnaseq_bigwigs
+shortLabel 34-H65_S38_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/34-H65_S38_L005.pos.bw
+longLabel  34-H65_S38_L005.pos  from region Hypothalamus in state LT replicate 1
+subGroups state=D_LT region=H replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 4-M65_S4_L001.neg
+parent rnaseq_bigwigs
+shortLabel 4-M65_S4_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/4-M65_S4_L001.neg.bw
+longLabel  4-M65_S4_L001.neg  from region Medulla in state LT replicate 5
+subGroups state=D_LT region=M replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 4-M65_S4_L001.pos
+parent rnaseq_bigwigs
+shortLabel 4-M65_S4_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/4-M65_S4_L001.pos.bw
+longLabel  4-M65_S4_L001.pos  from region Medulla in state LT replicate 5
+subGroups state=D_LT region=M replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 40-H67_S44_L005.neg
+parent rnaseq_bigwigs
+shortLabel 40-H67_S44_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/40-H67_S44_L005.neg.bw
+longLabel  40-H67_S44_L005.neg  from region Hypothalamus in state LT replicate 2
+subGroups state=D_LT region=H replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 40-H67_S44_L005.pos
+parent rnaseq_bigwigs
+shortLabel 40-H67_S44_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/40-H67_S44_L005.pos.bw
+longLabel  40-H67_S44_L005.pos  from region Hypothalamus in state LT replicate 2
+subGroups state=D_LT region=H replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 46-H68_S59_L008.neg
+parent rnaseq_bigwigs
+shortLabel 46-H68_S59_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/46-H68_S59_L008.neg.bw
+longLabel  46-H68_S59_L008.neg  from region Hypothalamus in state LT replicate 3
+subGroups state=D_LT region=H replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 46-H68_S59_L008.pos
+parent rnaseq_bigwigs
+shortLabel 46-H68_S59_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/46-H68_S59_L008.pos.bw
+longLabel  46-H68_S59_L008.pos  from region Hypothalamus in state LT replicate 3
+subGroups state=D_LT region=H replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 52-H72_S65_L008.neg
+parent rnaseq_bigwigs
+shortLabel 52-H72_S65_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/52-H72_S65_L008.neg.bw
+longLabel  52-H72_S65_L008.neg  from region Hypothalamus in state LT replicate 4
+subGroups state=D_LT region=H replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 52-H72_S65_L008.pos
+parent rnaseq_bigwigs
+shortLabel 52-H72_S65_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/52-H72_S65_L008.pos.bw
+longLabel  52-H72_S65_L008.pos  from region Hypothalamus in state LT replicate 4
+subGroups state=D_LT region=H replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 58-H74_S71_L008.neg
+parent rnaseq_bigwigs
+shortLabel 58-H74_S71_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/58-H74_S71_L008.neg.bw
+longLabel  58-H74_S71_L008.neg  from region Hypothalamus in state LT replicate 5
+subGroups state=D_LT region=H replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 58-H74_S71_L008.pos
+parent rnaseq_bigwigs
+shortLabel 58-H74_S71_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/58-H74_S71_L008.pos.bw
+longLabel  58-H74_S71_L008.pos  from region Hypothalamus in state LT replicate 5
+subGroups state=D_LT region=H replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track B65_5_TTAGGC_L001.neg
+parent rnaseq_bigwigs
+shortLabel B65_5_TTAGGC_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/B65_5_TTAGGC_L001.neg.bw
+longLabel  B65_5_TTAGGC_L001.neg  from region Brain_the_rest in state LT replicate 1
+subGroups state=D_LT region=B replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track B65_5_TTAGGC_L001.pos
+parent rnaseq_bigwigs
+shortLabel B65_5_TTAGGC_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/B65_5_TTAGGC_L001.pos.bw
+longLabel  B65_5_TTAGGC_L001.pos  from region Brain_the_rest in state LT replicate 1
+subGroups state=D_LT region=B replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track B67_11_CGATGT_L002.neg
+parent rnaseq_bigwigs
+shortLabel B67_11_CGATGT_L002.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/B67_11_CGATGT_L002.neg.bw
+longLabel  B67_11_CGATGT_L002.neg  from region Brain_the_rest in state LT replicate 2
+subGroups state=D_LT region=B replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track B67_11_CGATGT_L002.pos
+parent rnaseq_bigwigs
+shortLabel B67_11_CGATGT_L002.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/B67_11_CGATGT_L002.pos.bw
+longLabel  B67_11_CGATGT_L002.pos  from region Brain_the_rest in state LT replicate 2
+subGroups state=D_LT region=B replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track B68_17_CGTACG_L002.neg
+parent rnaseq_bigwigs
+shortLabel B68_17_CGTACG_L002.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/B68_17_CGTACG_L002.neg.bw
+longLabel  B68_17_CGTACG_L002.neg  from region Brain_the_rest in state LT replicate 3
+subGroups state=D_LT region=B replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track B68_17_CGTACG_L002.pos
+parent rnaseq_bigwigs
+shortLabel B68_17_CGTACG_L002.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/B68_17_CGTACG_L002.pos.bw
+longLabel  B68_17_CGTACG_L002.pos  from region Brain_the_rest in state LT replicate 3
+subGroups state=D_LT region=B replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track B72_23_TAGCTT_L003.neg
+parent rnaseq_bigwigs
+shortLabel B72_23_TAGCTT_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/B72_23_TAGCTT_L003.neg.bw
+longLabel  B72_23_TAGCTT_L003.neg  from region Brain_the_rest in state LT replicate 4
+subGroups state=D_LT region=B replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track B72_23_TAGCTT_L003.pos
+parent rnaseq_bigwigs
+shortLabel B72_23_TAGCTT_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/B72_23_TAGCTT_L003.pos.bw
+longLabel  B72_23_TAGCTT_L003.pos  from region Brain_the_rest in state LT replicate 4
+subGroups state=D_LT region=B replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track B74_29_TTAGGC_L003.neg
+parent rnaseq_bigwigs
+shortLabel B74_29_TTAGGC_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/B74_29_TTAGGC_L003.neg.bw
+longLabel  B74_29_TTAGGC_L003.neg  from region Brain_the_rest in state LT replicate 5
+subGroups state=D_LT region=B replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track B74_29_TTAGGC_L003.pos
+parent rnaseq_bigwigs
+shortLabel B74_29_TTAGGC_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/LT/B74_29_TTAGGC_L003.pos.bw
+longLabel  B74_29_TTAGGC_L003.pos  from region Brain_the_rest in state LT replicate 5
+subGroups state=D_LT region=B replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 25,25,112
+type bigWig
+
+track 1-M53_S1_L001.neg
+parent rnaseq_bigwigs
+shortLabel 1-M53_S1_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/1-M53_S1_L001.neg.bw
+longLabel  1-M53_S1_L001.neg  from region Medulla in state Ar replicate 1
+subGroups state=E_Ar region=M replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 1-M53_S1_L001.pos
+parent rnaseq_bigwigs
+shortLabel 1-M53_S1_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/1-M53_S1_L001.pos.bw
+longLabel  1-M53_S1_L001.pos  from region Medulla in state Ar replicate 1
+subGroups state=E_Ar region=M replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 13-M57_S13_L001.neg
+parent rnaseq_bigwigs
+shortLabel 13-M57_S13_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/13-M57_S13_L001.neg.bw
+longLabel  13-M57_S13_L001.neg  from region Medulla in state Ar replicate 2
+subGroups state=E_Ar region=M replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 13-M57_S13_L001.pos
+parent rnaseq_bigwigs
+shortLabel 13-M57_S13_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/13-M57_S13_L001.pos.bw
+longLabel  13-M57_S13_L001.pos  from region Medulla in state Ar replicate 2
+subGroups state=E_Ar region=M replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 19-M58_S23_L003.neg
+parent rnaseq_bigwigs
+shortLabel 19-M58_S23_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/19-M58_S23_L003.neg.bw
+longLabel  19-M58_S23_L003.neg  from region Medulla in state Ar replicate 3
+subGroups state=E_Ar region=M replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 19-M58_S23_L003.pos
+parent rnaseq_bigwigs
+shortLabel 19-M58_S23_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/19-M58_S23_L003.pos.bw
+longLabel  19-M58_S23_L003.pos  from region Medulla in state Ar replicate 3
+subGroups state=E_Ar region=M replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 25-M61_S29_L003.neg
+parent rnaseq_bigwigs
+shortLabel 25-M61_S29_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/25-M61_S29_L003.neg.bw
+longLabel  25-M61_S29_L003.neg  from region Medulla in state Ar replicate 4
+subGroups state=E_Ar region=M replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 25-M61_S29_L003.pos
+parent rnaseq_bigwigs
+shortLabel 25-M61_S29_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/25-M61_S29_L003.pos.bw
+longLabel  25-M61_S29_L003.pos  from region Medulla in state Ar replicate 4
+subGroups state=E_Ar region=M replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 31-H53_S35_L005.neg
+parent rnaseq_bigwigs
+shortLabel 31-H53_S35_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/31-H53_S35_L005.neg.bw
+longLabel  31-H53_S35_L005.neg  from region Hypothalamus in state Ar replicate 1
+subGroups state=E_Ar region=H replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 31-H53_S35_L005.pos
+parent rnaseq_bigwigs
+shortLabel 31-H53_S35_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/31-H53_S35_L005.pos.bw
+longLabel  31-H53_S35_L005.pos  from region Hypothalamus in state Ar replicate 1
+subGroups state=E_Ar region=H replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 37-H54_S41_L005.neg
+parent rnaseq_bigwigs
+shortLabel 37-H54_S41_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/37-H54_S41_L005.neg.bw
+longLabel  37-H54_S41_L005.neg  from region Hypothalamus in state Ar replicate 2
+subGroups state=E_Ar region=H replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 37-H54_S41_L005.pos
+parent rnaseq_bigwigs
+shortLabel 37-H54_S41_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/37-H54_S41_L005.pos.bw
+longLabel  37-H54_S41_L005.pos  from region Hypothalamus in state Ar replicate 2
+subGroups state=E_Ar region=H replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 43-H57_S47_L005.neg
+parent rnaseq_bigwigs
+shortLabel 43-H57_S47_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/43-H57_S47_L005.neg.bw
+longLabel  43-H57_S47_L005.neg  from region Hypothalamus in state Ar replicate 3
+subGroups state=E_Ar region=H replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 43-H57_S47_L005.pos
+parent rnaseq_bigwigs
+shortLabel 43-H57_S47_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/43-H57_S47_L005.pos.bw
+longLabel  43-H57_S47_L005.pos  from region Hypothalamus in state Ar replicate 3
+subGroups state=E_Ar region=H replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 49-H60_S62_L008.neg
+parent rnaseq_bigwigs
+shortLabel 49-H60_S62_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/49-H60_S62_L008.neg.bw
+longLabel  49-H60_S62_L008.neg  from region Hypothalamus in state Ar replicate 4
+subGroups state=E_Ar region=H replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 49-H60_S62_L008.pos
+parent rnaseq_bigwigs
+shortLabel 49-H60_S62_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/49-H60_S62_L008.pos.bw
+longLabel  49-H60_S62_L008.pos  from region Hypothalamus in state Ar replicate 4
+subGroups state=E_Ar region=H replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 55-H61_S68_L008.neg
+parent rnaseq_bigwigs
+shortLabel 55-H61_S68_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/55-H61_S68_L008.neg.bw
+longLabel  55-H61_S68_L008.neg  from region Hypothalamus in state Ar replicate 5
+subGroups state=E_Ar region=H replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 55-H61_S68_L008.pos
+parent rnaseq_bigwigs
+shortLabel 55-H61_S68_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/55-H61_S68_L008.pos.bw
+longLabel  55-H61_S68_L008.pos  from region Hypothalamus in state Ar replicate 5
+subGroups state=E_Ar region=H replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 7-M54_S7_L001.neg
+parent rnaseq_bigwigs
+shortLabel 7-M54_S7_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/7-M54_S7_L001.neg.bw
+longLabel  7-M54_S7_L001.neg  from region Medulla in state Ar replicate 5
+subGroups state=E_Ar region=M replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 7-M54_S7_L001.pos
+parent rnaseq_bigwigs
+shortLabel 7-M54_S7_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/7-M54_S7_L001.pos.bw
+longLabel  7-M54_S7_L001.pos  from region Medulla in state Ar replicate 5
+subGroups state=E_Ar region=M replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track B53_6_GATCAG_L001.neg
+parent rnaseq_bigwigs
+shortLabel B53_6_GATCAG_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/B53_6_GATCAG_L001.neg.bw
+longLabel  B53_6_GATCAG_L001.neg  from region Brain_the_rest in state Ar replicate 1
+subGroups state=E_Ar region=B replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track B53_6_GATCAG_L001.pos
+parent rnaseq_bigwigs
+shortLabel B53_6_GATCAG_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/B53_6_GATCAG_L001.pos.bw
+longLabel  B53_6_GATCAG_L001.pos  from region Brain_the_rest in state Ar replicate 1
+subGroups state=E_Ar region=B replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track B54_12_TGACCA_L002.neg
+parent rnaseq_bigwigs
+shortLabel B54_12_TGACCA_L002.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/B54_12_TGACCA_L002.neg.bw
+longLabel  B54_12_TGACCA_L002.neg  from region Brain_the_rest in state Ar replicate 2
+subGroups state=E_Ar region=B replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track B54_12_TGACCA_L002.pos
+parent rnaseq_bigwigs
+shortLabel B54_12_TGACCA_L002.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/B54_12_TGACCA_L002.pos.bw
+longLabel  B54_12_TGACCA_L002.pos  from region Brain_the_rest in state Ar replicate 2
+subGroups state=E_Ar region=B replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track B57_18_GAGTGG_L002.neg
+parent rnaseq_bigwigs
+shortLabel B57_18_GAGTGG_L002.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/B57_18_GAGTGG_L002.neg.bw
+longLabel  B57_18_GAGTGG_L002.neg  from region Brain_the_rest in state Ar replicate 3
+subGroups state=E_Ar region=B replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track B57_18_GAGTGG_L002.pos
+parent rnaseq_bigwigs
+shortLabel B57_18_GAGTGG_L002.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/B57_18_GAGTGG_L002.pos.bw
+longLabel  B57_18_GAGTGG_L002.pos  from region Brain_the_rest in state Ar replicate 3
+subGroups state=E_Ar region=B replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track B58_24_GGCTAC_L003.neg
+parent rnaseq_bigwigs
+shortLabel B58_24_GGCTAC_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/B58_24_GGCTAC_L003.neg.bw
+longLabel  B58_24_GGCTAC_L003.neg  from region Brain_the_rest in state Ar replicate 4
+subGroups state=E_Ar region=B replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track B58_24_GGCTAC_L003.pos
+parent rnaseq_bigwigs
+shortLabel B58_24_GGCTAC_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/B58_24_GGCTAC_L003.pos.bw
+longLabel  B58_24_GGCTAC_L003.pos  from region Brain_the_rest in state Ar replicate 4
+subGroups state=E_Ar region=B replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track B61_30_GATCAG_L003.neg
+parent rnaseq_bigwigs
+shortLabel B61_30_GATCAG_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/B61_30_GATCAG_L003.neg.bw
+longLabel  B61_30_GATCAG_L003.neg  from region Brain_the_rest in state Ar replicate 5
+subGroups state=E_Ar region=B replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track B61_30_GATCAG_L003.pos
+parent rnaseq_bigwigs
+shortLabel B61_30_GATCAG_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/Ar/B61_30_GATCAG_L003.pos.bw
+longLabel  B61_30_GATCAG_L003.pos  from region Brain_the_rest in state Ar replicate 5
+subGroups state=E_Ar region=B replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 0,0,255
+type bigWig
+
+track 12-M84_S12_L001.neg
+parent rnaseq_bigwigs
+shortLabel 12-M84_S12_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/12-M84_S12_L001.neg.bw
+longLabel  12-M84_S12_L001.neg  from region Medulla in state SpD replicate 1
+subGroups state=F_SpD region=M replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 12-M84_S12_L001.pos
+parent rnaseq_bigwigs
+shortLabel 12-M84_S12_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/12-M84_S12_L001.pos.bw
+longLabel  12-M84_S12_L001.pos  from region Medulla in state SpD replicate 1
+subGroups state=F_SpD region=M replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 18-M77_S22_L003.neg
+parent rnaseq_bigwigs
+shortLabel 18-M77_S22_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/18-M77_S22_L003.neg.bw
+longLabel  18-M77_S22_L003.neg  from region Medulla in state SpD replicate 2
+subGroups state=F_SpD region=M replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 18-M77_S22_L003.pos
+parent rnaseq_bigwigs
+shortLabel 18-M77_S22_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/18-M77_S22_L003.pos.bw
+longLabel  18-M77_S22_L003.pos  from region Medulla in state SpD replicate 2
+subGroups state=F_SpD region=M replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 24-M79_S28_L003.neg
+parent rnaseq_bigwigs
+shortLabel 24-M79_S28_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/24-M79_S28_L003.neg.bw
+longLabel  24-M79_S28_L003.neg  from region Medulla in state SpD replicate 3
+subGroups state=F_SpD region=M replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 24-M79_S28_L003.pos
+parent rnaseq_bigwigs
+shortLabel 24-M79_S28_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/24-M79_S28_L003.pos.bw
+longLabel  24-M79_S28_L003.pos  from region Medulla in state SpD replicate 3
+subGroups state=F_SpD region=M replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 30-M80_S34_L003.neg
+parent rnaseq_bigwigs
+shortLabel 30-M80_S34_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/30-M80_S34_L003.neg.bw
+longLabel  30-M80_S34_L003.neg  from region Medulla in state SpD replicate 4
+subGroups state=F_SpD region=M replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 30-M80_S34_L003.pos
+parent rnaseq_bigwigs
+shortLabel 30-M80_S34_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/30-M80_S34_L003.pos.bw
+longLabel  30-M80_S34_L003.pos  from region Medulla in state SpD replicate 4
+subGroups state=F_SpD region=M replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 36-H83_S40_L005.neg
+parent rnaseq_bigwigs
+shortLabel 36-H83_S40_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/36-H83_S40_L005.neg.bw
+longLabel  36-H83_S40_L005.neg  from region Hypothalamus in state SpD replicate 1
+subGroups state=F_SpD region=H replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 36-H83_S40_L005.pos
+parent rnaseq_bigwigs
+shortLabel 36-H83_S40_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/36-H83_S40_L005.pos.bw
+longLabel  36-H83_S40_L005.pos  from region Hypothalamus in state SpD replicate 1
+subGroups state=F_SpD region=H replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 42-H84_S46_L005.neg
+parent rnaseq_bigwigs
+shortLabel 42-H84_S46_L005.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/42-H84_S46_L005.neg.bw
+longLabel  42-H84_S46_L005.neg  from region Hypothalamus in state SpD replicate 2
+subGroups state=F_SpD region=H replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 42-H84_S46_L005.pos
+parent rnaseq_bigwigs
+shortLabel 42-H84_S46_L005.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/42-H84_S46_L005.pos.bw
+longLabel  42-H84_S46_L005.pos  from region Hypothalamus in state SpD replicate 2
+subGroups state=F_SpD region=H replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 48-H77_S61_L008.neg
+parent rnaseq_bigwigs
+shortLabel 48-H77_S61_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/48-H77_S61_L008.neg.bw
+longLabel  48-H77_S61_L008.neg  from region Hypothalamus in state SpD replicate 3
+subGroups state=F_SpD region=H replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 48-H77_S61_L008.pos
+parent rnaseq_bigwigs
+shortLabel 48-H77_S61_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/48-H77_S61_L008.pos.bw
+longLabel  48-H77_S61_L008.pos  from region Hypothalamus in state SpD replicate 3
+subGroups state=F_SpD region=H replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 54-H79_S67_L008.neg
+parent rnaseq_bigwigs
+shortLabel 54-H79_S67_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/54-H79_S67_L008.neg.bw
+longLabel  54-H79_S67_L008.neg  from region Hypothalamus in state SpD replicate 4
+subGroups state=F_SpD region=H replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 54-H79_S67_L008.pos
+parent rnaseq_bigwigs
+shortLabel 54-H79_S67_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/54-H79_S67_L008.pos.bw
+longLabel  54-H79_S67_L008.pos  from region Hypothalamus in state SpD replicate 4
+subGroups state=F_SpD region=H replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 6-M83_S6_L001.neg
+parent rnaseq_bigwigs
+shortLabel 6-M83_S6_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/6-M83_S6_L001.neg.bw
+longLabel  6-M83_S6_L001.neg  from region Medulla in state SpD replicate 5
+subGroups state=F_SpD region=M replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 6-M83_S6_L001.pos
+parent rnaseq_bigwigs
+shortLabel 6-M83_S6_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/6-M83_S6_L001.pos.bw
+longLabel  6-M83_S6_L001.pos  from region Medulla in state SpD replicate 5
+subGroups state=F_SpD region=M replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 60-H80_S73_L008.neg
+parent rnaseq_bigwigs
+shortLabel 60-H80_S73_L008.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/60-H80_S73_L008.neg.bw
+longLabel  60-H80_S73_L008.neg  from region Hypothalamus in state SpD replicate 5
+subGroups state=F_SpD region=H replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track 60-H80_S73_L008.pos
+parent rnaseq_bigwigs
+shortLabel 60-H80_S73_L008.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/60-H80_S73_L008.pos.bw
+longLabel  60-H80_S73_L008.pos  from region Hypothalamus in state SpD replicate 5
+subGroups state=F_SpD region=H replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track B77_13_CAGATC_L002.neg
+parent rnaseq_bigwigs
+shortLabel B77_13_CAGATC_L002.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/B77_13_CAGATC_L002.neg.bw
+longLabel  B77_13_CAGATC_L002.neg  from region Brain_the_rest in state SpD replicate 1
+subGroups state=F_SpD region=B replicate=R1 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track B77_13_CAGATC_L002.pos
+parent rnaseq_bigwigs
+shortLabel B77_13_CAGATC_L002.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/B77_13_CAGATC_L002.pos.bw
+longLabel  B77_13_CAGATC_L002.pos  from region Brain_the_rest in state SpD replicate 1
+subGroups state=F_SpD region=B replicate=R1 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track B79_19_ACTGAT_L002.neg
+parent rnaseq_bigwigs
+shortLabel B79_19_ACTGAT_L002.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/B79_19_ACTGAT_L002.neg.bw
+longLabel  B79_19_ACTGAT_L002.neg  from region Brain_the_rest in state SpD replicate 2
+subGroups state=F_SpD region=B replicate=R2 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track B79_19_ACTGAT_L002.pos
+parent rnaseq_bigwigs
+shortLabel B79_19_ACTGAT_L002.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/B79_19_ACTGAT_L002.pos.bw
+longLabel  B79_19_ACTGAT_L002.pos  from region Brain_the_rest in state SpD replicate 2
+subGroups state=F_SpD region=B replicate=R2 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track B80_25_ACAGTG_L003.neg
+parent rnaseq_bigwigs
+shortLabel B80_25_ACAGTG_L003.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/B80_25_ACAGTG_L003.neg.bw
+longLabel  B80_25_ACAGTG_L003.neg  from region Brain_the_rest in state SpD replicate 3
+subGroups state=F_SpD region=B replicate=R3 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track B80_25_ACAGTG_L003.pos
+parent rnaseq_bigwigs
+shortLabel B80_25_ACAGTG_L003.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/B80_25_ACAGTG_L003.pos.bw
+longLabel  B80_25_ACAGTG_L003.pos  from region Brain_the_rest in state SpD replicate 3
+subGroups state=F_SpD region=B replicate=R3 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track B83_1_ACAGTG_L001.neg
+parent rnaseq_bigwigs
+shortLabel B83_1_ACAGTG_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/B83_1_ACAGTG_L001.neg.bw
+longLabel  B83_1_ACAGTG_L001.neg  from region Brain_the_rest in state SpD replicate 4
+subGroups state=F_SpD region=B replicate=R4 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track B83_1_ACAGTG_L001.pos
+parent rnaseq_bigwigs
+shortLabel B83_1_ACAGTG_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/B83_1_ACAGTG_L001.pos.bw
+longLabel  B83_1_ACAGTG_L001.pos  from region Brain_the_rest in state SpD replicate 4
+subGroups state=F_SpD region=B replicate=R4 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track B84_7_AGTCAA_L001.neg
+parent rnaseq_bigwigs
+shortLabel B84_7_AGTCAA_L001.neg
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/B84_7_AGTCAA_L001.neg.bw
+longLabel  B84_7_AGTCAA_L001.neg  from region Brain_the_rest in state SpD replicate 5
+subGroups state=F_SpD region=B replicate=R5 strand=neg
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+
+track B84_7_AGTCAA_L001.pos
+parent rnaseq_bigwigs
+shortLabel B84_7_AGTCAA_L001.pos
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bigwig/SpD/B84_7_AGTCAA_L001.pos.bw
+longLabel  B84_7_AGTCAA_L001.pos  from region Brain_the_rest in state SpD replicate 5
+subGroups state=F_SpD region=B replicate=R5 strand=pos
+maxHeightPixels 30:30:10
+color 255,165,0
+type bigWig
+

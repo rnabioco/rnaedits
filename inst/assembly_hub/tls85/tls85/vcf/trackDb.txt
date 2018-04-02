@@ -1,0 +1,57 @@
+ 
+track VCF-RNA-Editing-Sites
+superTrack on show
+group martin_data
+shortLabel RNA_Editing_Sites
+longLabel RNA editing sites called from RNA-Seq of animals at varying stages of hibernation
+
+    track vcfs_annotated
+    type vcfTabix
+    parent VCF-RNA-Editing-Sites
+    visibility full
+    compositeTrack on
+    shortLabel rna_edits
+    longLabel RNA editing sites 
+
+    track vcfs_impactful
+    type vcfTabix
+    parent VCF-RNA-Editing-Sites
+    visibility full
+    compositeTrack on
+    shortLabel impactful_rna_edits
+    longLabel RNA editing sites in annotated transcripts with deleterious impact
+
+track annotated_variants
+type vcfTabix
+parent vcfs_annotated
+shortLabel A_to_G_edits_all_sites
+longLabel A to G edits 
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/vcf/filtered_select_variants.vcf.bgz
+hapClusterEnabled false
+maxWindowToDraw 3000000
+
+
+track impactful_variants
+type vcfTabix
+parent vcfs_impactful
+shortLabel A_to_G_edits_impactful
+longLabel A to G edits predicted to be impactful
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/vcf/filtered_select_variants_impactful.vcf.bgz
+hapClusterEnabled false
+maxWindowToDraw 3000000
+    
+    track vcfs_significant
+    type bigBed
+    parent VCF-RNA-Editing-Sites
+    visibility full
+    compositeTrack on
+    shortLabel significant_rna_edits
+    longLabel Significant RNA editing sites
+
+track significant_variants
+type bigBed
+parent vcfs_significant
+shortLabel A_to_G_edits_significant
+longLabel A to G edits significantly varying by state
+bigDataUrl http://amc-sandbox.ucdenver.edu/User33/Martin/tls85/tls85/bed/sig_edits_sorted.bb
+maxWindowToDraw 3000000
