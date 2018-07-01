@@ -1,0 +1,974 @@
+---
+title: "Variants called by strand"
+author: "Kent Riemondy RBI"
+date: "January 29, 2017"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: false
+    fig_caption: yes
+    fig_retina: 1 
+    code_folding: hide
+params:
+  allele_counts: "../../data/vcf/variant_allele_counts_by_strand/A_G_alleles/counts/"
+  variant_info: "../../data/vcf/variant_allele_counts_by_strand/A_G_alleles/filtered_select_variants.bed.gz"
+  ref: "A"
+  alt: "G"
+  prefix: "../2017-06-18/variant_allele_counts_by_strand/"
+  dirname: "A_G_alleles"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+```{r ,message=FALSE, warning=FALSE, echo=FALSE}
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(readr)
+library(stringr)
+library(ggplot2)
+library(RColorBrewer)
+library(edgeR)
+library(ComplexHeatmap)
+library(VennDiagram)
+library(gridExtra)
+library(cowplot)
+```
+
+### Differential editing analysis
+
+```{r general_vars}
+
+#colors mapping to state
+state_cols <-  c(
+  SA = rgb(255, 0, 0, maxColorValue=255),
+  IBA = rgb(67, 205, 128, maxColorValue=255),
+  Ent = rgb(155, 48, 255, maxColorValue=255),
+  LT = rgb(25, 25, 112, maxColorValue=255),
+  Ar = rgb(0, 0, 255, maxColorValue=255),
+  SpD = rgb(255, 165, 0, maxColorValue=255) 
+)
+# preferred order
+state_order = c(
+  "SA", "IBA", "Ent", "LT", "Ar", "SpD"
+)
+
+#colors for region
+region_cols <- c(
+  Medulla = "#4DAF4A",
+  Hypothalamus = "#377EB8",
+  Forebrain =  "#E41A1C"
+)
+# region order
+region_order <- c("Medulla", "Hypothalamus", "Forebrain")
+
+allele_counts_path <- params$allele_counts
+ref <- params$ref
+alt <- params$alt
+variant_info <- params$variant_info
+outname <- params$dirname
+```
+
+```{r io_util_functions}
+bp_comp <- function(nt){
+  #return complementary basepair
+  comp <- c("A", "G", "T", "C")
+  names(comp) <- c("T", "C", "A", "G")
+  comp[nt] %>% unname()
+}
+
+group_dat <- function(.dir, .pattern){
+  # read in and aggregate data into matrix-like format
+  files <- dir(.dir, 
+             full.names = T,
+             pattern = .pattern)
+  dat <- suppressMessages(map(files,  ~readr::read_tsv(.x,  col_names = T, progress = F)))
+  dat <- Reduce(function(x, y) inner_join(x, y, by = c("#chrom", "pos", "ref", "base")), dat)
+  colnames(dat) <- c("#chrom", "pos", "ref", "base", basename(files))
+  dat
+}  
+
+write_gztsv <- function(df, name, ...){
+  # write output as gzipped, supply name without .gz
+  if(str_detect(name, ".gz$")){
+    uncompressed_name <- str_replace(name, ".gz$", "")
+  } else {
+    uncompressed_name <- name
+  }
+  write_tsv(df, uncompressed_name, ...)
+  system(paste0("gzip -f ", uncompressed_name))
+}
+```
+
+### load in the data
+
+```{r load_in_data}
+ref_comp <- bp_comp(ref)
+alt_comp <- bp_comp(alt)
+# for some unknown reason this previous definition is not recognized when running on tesla. 
+
+allele_counts_path <- params$allele_counts
+prefix <- params$prefix
+outname <- params$dirname
+message(prefix)
+message(allele_counts_path)
+message(params$allele_counts)
+message(params$dirname)
+
+regions = c("medulla", "hypothalamus", "brainrest")
+dat <- map(regions, ~group_dat(paste0(allele_counts_path, .x), ".gz"))
+names(dat) <- regions
+
+
+# write out master table
+system(paste0("mkdir -p ", paste0(prefix, "/", outname, "/")))
+
+bind_cols <- c('#chrom', "pos", "ref", "base")
+all_variants_export <- Reduce(function(x, y) inner_join(x, y, by = bind_cols), dat)
+write_gztsv(all_variants_export, paste0(prefix, "/", outname, "/all_sites_raw_counts.txt"))
+```
+
+### clean input
+
+```{r clean_up}
+
+clean_and_filter <- function(dat, ref_nt, alt_nt, ref_comp, alt_comp){
+  # filter for certain alleles, and spread each ref and alt count into seperate columns
+  
+  dat <- mutate(dat, 
+                 edit_site = paste(`#chrom`, pos, ref, sep = "::")) %>% 
+  dplyr::select(edit_site, everything())
+  
+  ag_dat <- filter(dat,
+                   (ref == ref_nt & base == alt_nt) |
+                   (ref == ref_nt & base == ref_nt) |
+                   (ref == ref_comp & base == alt_comp) |
+                  (ref == ref_comp & base == ref_comp)) %>%
+    mutate(
+           ref = ifelse(ref == ref_comp, ref_nt, ref),
+           base = ifelse(base == ref_comp, ref_nt, 
+                         ifelse(base == alt_comp, alt_nt, base)))
+  
+  ag_dat <- group_by(ag_dat, edit_site, `#chrom`, pos, ref)
+  #make sure alternate allele is second in group
+  if (ref_nt < alt_nt){
+    ag_dat <- arrange(ag_dat, `#chrom`, pos, ref, base)
+  } else {
+    ag_dat <- arrange(ag_dat, `#chrom`, pos, ref, desc(base))
+  }
+
+  ag_dat
+}
+
+get_long_data <- function(dat, ref_nt, alt_nt, output_prefix){
+  ag_dat <- group_by(dat, edit_site, `#chrom`, pos, ref)
+  
+  ag_wide <- summarize_at(ag_dat, vars(matches(".gz")),
+               funs(a = nth(., 1),b = nth(., 2)))
+  
+  ag_wide <- ungroup(ag_wide) %>%
+      dplyr::select(-`#chrom`, -pos, -ref) %>% 
+      dplyr::select(edit_site, everything())
+ 
+  ag_wide
+}
+
+get_proportion_dat <- function(dat, ref_nt, alt_nt, output_prefix){
+  ag_dat <- group_by(dat, edit_site, `#chrom`, pos, ref)
+  
+  ag_wide <- summarize_at(ag_dat, vars(matches(".gz")),
+               funs(nth(., 2) / (nth(., 1) + nth(., 2))))
+  
+  ag_wide <- ungroup(ag_wide) %>%
+      dplyr::select(-`#chrom`, -pos, -ref) %>% 
+      dplyr::select(edit_site, everything())
+  
+  ag_wide
+}
+
+get_matrix <- function(x) {
+  ag_matrix <- as.data.frame(x)
+  rownames(ag_matrix) <- ag_matrix[, 1]
+  ag_matrix[, 1] <- NULL
+  ag_matrix
+}
+
+filter_variants <- function(df){
+  #take proportion data and select varaints with max > 0.05 and min < 0.95
+  df %>% 
+    gather(library, props, -edit_site) %>% 
+    group_by(edit_site) %>% 
+    summarize(smax = max(props, na.rm = T), smin = min(props, na.rm = T)) %>% 
+    (.$smax > 0.05)
+}
+
+dat <- map(dat, ~clean_and_filter(.x, ref, alt, ref_comp, alt_comp) ) 
+long_dat <- map2(dat, names(dat), ~get_long_data(.x, ref, alt, .y) ) 
+prop_dat <- map2(dat, names(dat), ~get_proportion_dat(.x, ref, alt, .y) ) 
+
+matrix_dat <- map(long_dat, ~get_matrix(.x))
+```
+
+```{r save_objs}
+#save matricies for all sites
+all_prop <- bind_cols(prop_dat)
+all_prop <- all_prop[, c(TRUE, !(colnames(all_prop)[2:ncol(all_prop)] == 'edit_site'))] 
+
+all_long <- bind_cols(long_dat)
+all_long <- all_long[, c(TRUE, !(colnames(all_long)[2:ncol(all_long)] == 'edit_site'))] 
+
+all_dat_export <- bind_cols(dat)
+keep_cols <- c('edit_site', '#chrom', "pos", "ref", "base")
+all_dat_export <- all_dat_export[, c(rep(TRUE, 5), !(colnames(all_dat_export)[6:ncol(all_dat_export)] %in% keep_cols))] 
+
+write_gztsv(all_prop, paste0(prefix, "/", outname, "/", 
+                            ref, "_", alt, "_all_sites_proportions.txt"))
+
+write_gztsv(all_long, paste0(prefix, "/", outname, "/", 
+                            ref, "_", alt, "_all_sites_raw_counts_wide.txt"))
+
+write_gztsv(all_dat_export, paste0(prefix, "/", outname, "/", 
+                            ref, "_", alt, "_all_sites_raw_counts.txt"))
+
+```
+
+
+```{r filter_variants}
+variants_to_keep <- function(df){
+  #take proportion data and select varaints with max > 0.05 and min < 0.95
+  df %>% 
+    gather(library, props, -edit_site) %>% 
+    group_by(edit_site) %>% 
+    summarize(smax = max(props, na.rm = T), 
+              smin = min(props, na.rm = T)) -> min_max
+  sites_to_keep <- min_max$smax > 0.05 & min_max$smin < 0.95
+  min_max <- min_max[sites_to_keep, ]
+  min_max["edit_site"]
+}
+
+good_variants <- variants_to_keep(all_prop)
+
+filtered_prop <- all_prop %>% semi_join(good_variants, by = "edit_site")
+filtered_dat_export <- all_dat_export %>% semi_join(good_variants, by = "edit_site")
+filtered_long <- all_long %>% semi_join(good_variants, by = "edit_site")
+
+write_gztsv(filtered_prop, paste0(prefix, "/", outname, "/", 
+                            ref, "_", alt, "_filtered_sites_proportions.txt"))
+
+write_gztsv(filtered_long, paste0(prefix, "/", outname, "/", 
+                            ref, "_", alt, "_filtered_sites_raw_counts_wide.txt"))
+
+write_gztsv(filtered_dat_export, paste0(prefix, "/", outname, "/", 
+                            ref, "_", alt, "_filtered_sites_raw_counts.txt"))
+
+long_dat <- map(long_dat,  ~.x %>% semi_join(good_variants, by = "edit_site"))
+prop_dat <- map(prop_dat,  ~.x %>% semi_join(good_variants, by = "edit_site"))
+matrix_dat <- map(matrix_dat,  ~.x[rownames(.x) %in% good_variants$edit_site, ])
+
+knitr::kable(data_frame(original_sites = length(all_prop$edit_site), 
+                        after_filtering = length(filtered_prop$edit_site)))
+```
+
+### set up glms
+
+```{r get_pdata}
+
+get_groups <- function(matrix_dat, regex_for_fastq, ref_nt, alt_nt, pdata_file = "../../docs/BrainRegionRNAseqLibMetadata.txt") {
+ # make_groups
+  g_names <- colnames(matrix_dat)
+  animal_number <- str_extract(g_names, regex_for_fastq)
+  
+  allele_type <- rep(c(ref_nt, alt_nt), each = 30)
+  groups <- data_frame(g_names, animal_number, allele_type)
+  
+  pdata <- readr::read_tsv(pdata_file)
+  
+  pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+  
+  pdata <- mutate(pdata, 
+                  abbrev_sample = str_split(sample, "_", simplify = T)[, 1])
+  
+  pdata <- inner_join(groups, 
+                      pdata, 
+                      by = c("animal_number" = "abbrev_sample")) %>%
+    dplyr::select(g_names, animal_number, allele_type, State)
+  pdata
+}
+
+regexes <- paste0(c("M", "H", "B"), "[0-9]+")
+
+pdata_groups <- map2(matrix_dat, regexes, ~get_groups(.x, .y, ref, alt))
+
+```
+
+
+
+```{r}
+# get # of uniquely mapped reads for library size
+.dir <- file.path("..", "..", "data", "star")
+star_report_files <- dir(.dir,
+                         pattern = "*_2pass_Log.final.out",
+                         recursive = T, full.names = T)
+
+star_reports <- map(star_report_files,
+                    ~read_tsv(.x, col_names = F))
+
+star_report_names <- basename(star_report_files) %>%
+  str_replace(., "_2pass_Log.final.out", "")
+
+names(star_reports) <- star_report_names
+lib_sizes <- map(star_reports,
+                 ~dplyr::filter(.x,
+                                X1 == "Uniquely mapped reads number |") %>%
+                   dplyr::select(X2))
+
+lib_sizes <- bind_rows(lib_sizes, .id = "library") %>%
+  dplyr::rename(lib_size = X2) %>%
+  dplyr::mutate(lib_size = as.numeric(lib_size))
+
+
+extract_lib_sizes <- function(matrix_dat, lib_sizes_df) {
+  .names <- colnames(matrix_dat)
+  .names <- str_replace(.names, "_counts.txt.gz_a$", "")
+  .names <- str_replace(.names, "_counts.txt.gz_b$", "")
+  .names <- data_frame(original_name = .names)
+  sizes <- inner_join(.names, lib_sizes_df,
+                      by = c("original_name" = "library"))
+  res <- dplyr::select(sizes, lib_size) %>% unlist()
+  names(res) <- sizes[["library"]]
+  res
+}
+
+lib_sizes <- map(matrix_dat,
+                 ~extract_lib_sizes(.x, lib_sizes))
+
+```
+
+```{r build_design_matrices}
+
+get_design_matrix <- function(pdata, ref_nt){
+  #set up design matrix
+  design <- model.matrix(~0 + animal_number + State:allele_type, data = pdata)
+  design <- design[,!grepl(paste0("allele_type", ref_nt), colnames(design))]
+  design
+}
+
+design_matrices <- map(pdata_groups, ~get_design_matrix(.x, ref))
+
+```
+
+
+```{r initialize_edger_objs}
+
+get_edger_objs <- function(matrix_dat, pdata, lib_size){
+  dge <- DGEList(matrix_dat, group = pdata$State, lib.size = lib_size)
+  keep <- rowSums(getCounts(dge)>5, na.rm = T) >= 4
+  dge <- dge[keep, , keep.lib.sizes=TRUE]
+  dge
+}
+
+edger_objs <- pmap(list(matrix_dat, pdata_groups, lib_sizes),
+                   function(x, y, z) get_edger_objs(x, y, z))
+
+```
+
+### run normalization and DE analysis
+```{r normalize_objs}
+  
+norm_edger_objs <- function(edger_obj, design_matrix) {
+  #obtain normalization values for Reference alleles and propagate to ALT alleles
+  dge_subset <- calcNormFactors(edger_obj[, 1:30, keep.lib.sizes = TRUE])
+  edger_obj$samples$norm.factors <- rep(dge_subset$samples$norm.factors, 2)
+  
+  edger_obj <- estimateDisp(edger_obj, design_matrix)
+  edger_obj
+}
+
+edger_objs <- map2(edger_objs, design_matrices, ~norm_edger_objs(.x, .y))
+```
+
+```{r set_up_glms}
+get_topTags <- function(dge, design, alt_nt){
+  
+  fit <- glmFit(dge, design)
+ 
+    #set up contrasts for ANOVA style analysis
+  colnames(design) <- str_replace(colnames(design), ":", ".")
+  
+  alt_allele <- paste0("allele_type", alt_nt)
+  
+  StateAr <- paste0("StateAr.", alt_allele)
+  StateSpD <- paste0("StateSpD.", alt_allele)
+  StateIBA <- paste0("StateIBA.", alt_allele)
+  StateEnt <- paste0("StateEnt.", alt_allele)
+  StateSA <- paste0("StateSA.", alt_allele)
+  StateLT <- paste0("StateLT.", alt_allele)
+
+  .cons <- c(paste0(StateAr, " - ", StateLT),
+             paste0(StateSpD, " - ", StateLT),
+             paste0(StateIBA, " - ", StateLT),
+             paste0(StateEnt, " - ", StateLT),
+             paste0(StateSA, " - ", StateLT))
+  
+  .contrasts <- makeContrasts(
+                        contrasts = .cons,
+                        levels = design)
+  
+  con <- glmLRT(fit, contrast = .contrasts)
+  
+  con <- topTags(con, n = nrow(con))
+  
+  con <- as.data.frame(con)
+  
+  tibble::rownames_to_column(con, "site")
+}
+
+de_results <- map2(edger_objs, design_matrices, ~get_topTags(.x, .y, alt))
+
+```
+
+```{r}
+saveRDS(edger_objs, "edgeR_de_editing.rds")
+edger_objs <- readRDS("edgeR_de_editing.rds")
+
+get_topTags_warm_cold <- function(dge, design, alt_nt){
+  
+  fit <- glmFit(dge, design)
+ 
+    #set up contrasts for ANOVA style analysis
+  colnames(design) <- str_replace(colnames(design), ":", ".")
+  
+  alt_allele <- paste0("allele_type", alt_nt)
+  
+  StateAr <- paste0("StateAr.", alt_allele)
+  StateSpD <- paste0("StateSpD.", alt_allele)
+  StateIBA <- paste0("StateIBA.", alt_allele)
+  StateEnt <- paste0("StateEnt.", alt_allele)
+  StateSA <- paste0("StateSA.", alt_allele)
+  StateLT <- paste0("StateLT.", alt_allele)
+  
+  .cons <- c(paste0("((", StateSpD, " + ", StateSA, " + ", StateIBA, ") / 3)", 
+                    " - ",
+                    "((", StateAr, " + ", StateLT, ") / 2)"))
+  
+  .contrasts <- makeContrasts(
+                        contrasts = .cons,
+                        levels = design)
+  
+  con <- glmLRT(fit, contrast = .contrasts)
+  
+  con <- topTags(con, n = nrow(con))
+  
+  con <- as.data.frame(con)
+  
+  tibble::rownames_to_column(con, "site")
+}  
+  
+
+de_results_warm_cold <- map2(edger_objs, design_matrices, ~get_topTags_warm_cold(.x, .y, alt))
+
+
+## write out table and parse in another rmd
+output_warm_cold <- bind_rows(de_results_warm_cold, .id = "region")
+write_tsv(output_warm_cold, paste0(prefix, "/", outname, "/", 
+                            ref, "_", alt,       "warm_v_cold_post_hoc_edger.txt"))
+```
+
+Next extract out normalized counts for each allele
+
+```{r cpms}
+cpms <- map(edger_objs, 
+             ~cpm(.x, normalized.lib.sizes = T))
+names(cpms) <- c("Medulla",
+                     "Hypothalamus",
+                     "Forebrain")
+
+map2(cpms, names(cpms), ~as.data.frame(.x) %>% 
+       tibble::rownames_to_column("site") %>% 
+       write_tsv(paste0(.y, "_normalized_cpms.txt")))
+```
+
+### plot venn diagrams
+```{r format_matrix_for_heatmap}
+
+format_heatmap_matrix <- function(prop_data, na_value = NA) {
+  
+  ag_matrix <- as.data.frame(prop_data)
+  rownames(ag_matrix) <- ag_matrix[, 1]
+  ag_matrix[, 1] <- NULL
+  
+  # remove all NA rows
+  remove_na <- apply(ag_matrix, 1, function(x) !all(is.na(x)))
+  ag_matrix <- ag_matrix[remove_na, ]
+   
+  #remove all rows with SD = 0 (basically rows with all 1 or 0)
+  ag_matrix <- ag_matrix[apply(ag_matrix, 1, function(x) sd(x, na.rm = T) != 0), ]
+
+  #remove all rows with only 10 non-na values
+  remove_too_many_na <- apply(ag_matrix, 1, function(x) !(sum(is.na(x)) > 10))
+  ag_matrix <- ag_matrix[remove_too_many_na, ]
+  
+  #replace NaNs with NA
+   ag_matrix[] <- lapply(ag_matrix, function(x){ 
+    x[is.nan(x)] <- na_value 
+    x 
+  })
+  ag_matrix
+}  
+
+heatmap_matrices <- map(prop_dat, ~format_heatmap_matrix(.x))
+
+# bind all proprtion data into one matrix, but drop repeated 'edit_site' columns
+all_prop_dat <- bind_cols(prop_dat)
+all_prop_dat <- all_prop_dat[, c(TRUE, !(colnames(all_prop_dat)[2:ncol(all_prop_dat)] == 'edit_site'))] 
+
+all_data_heatmap_matrix <- format_heatmap_matrix(all_prop_dat)
+
+```
+
+```{r tidy_proportion_data}
+tidy_proportion_data <- function(data_matrix, regex_for_fastq, pdata = "../../docs/BrainRegionRNAseqLibMetadata.txt"){
+  # take matrix of proportions and tidy with sample annotations from pdata table
+  dat <- dplyr::select(data_matrix, matches(".gz"))
+  g_names <- colnames(dat)
+  animal_number <- str_extract(g_names, regex_for_fastq)
+  
+  groups <- data_frame(g_names, animal_number)
+  
+  pdata <- readr::read_tsv(pdata)
+  
+  pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+  
+  pdata <- mutate(pdata, 
+                  abbrev_sample = str_split(sample, "_", simplify = T)[, 1])
+  
+  pdata <- inner_join(groups, 
+                      pdata, 
+                      by = c("animal_number" = "abbrev_sample")) %>%
+    dplyr::select(g_names, animal_number, State)
+  dat <- tibble::rownames_to_column(data_matrix, "site") %>%  tbl_df()
+  dat <- gather(dat, library, proportion, -site)
+  dat <- inner_join(dat, pdata, by = c("library" = "g_names"))
+  dat
+}
+
+tidy_proportions <- map2(heatmap_matrices, regexes, ~tidy_proportion_data(.x, .y))
+```
+
+```{r group_and_filter_by_fdr}
+
+names(tidy_proportions) <- c("Medulla",
+                     "Hypothalamus",
+                     "Forebrain")
+
+long_proportion_dat <- bind_rows(tidy_proportions, .id = "Region")
+
+
+names(de_results) <- c("Medulla",
+                     "Hypothalamus",
+                     "Forebrain")
+
+long_de_results <- bind_rows(de_results, .id = "Region")
+
+
+select_fdr_sites <- function(long_de_results) {
+
+ fdr_sig <- long_de_results %>% 
+  group_by(Region) %>% 
+  filter(FDR < 0.10) %>%
+  split(.$Region)
+
+ fdr_sig_sites <- map(fdr_sig, ~ungroup(.x) %>% dplyr::select(site) %>%  unlist())
+ fdr_sig_sites
+}
+
+fdr_filtered_sites <- select_fdr_sites(long_de_results)
+```
+
+
+```{r plot_venns, eval = T}
+plot_venn <- function(gene_lists, title, ...){
+    venn_plot <- VennDiagram::venn.diagram(gene_lists,
+                            filename = NULL,
+                          fill = c("cornflowerblue", "yellow", "darkorchid1")[1:length(gene_lists)],
+                          main = title,
+                          main.pos = c(0.5, 1),
+                          margin = 0.1, 
+                          fontfamily = "Arial",
+                          main.fontfamily = "Arial",
+                          cat.fontfamily = "Arial",
+                          ...)
+    arrangeGrob(grobTree(venn_plot))
+}
+
+venn <- plot_venn(fdr_filtered_sites, paste0(ref, "->", alt, " SNV with ANOVA FDR < 0.10\n"))
+plot_grid(venn)
+```
+
+```{r proportional_3set_venns, eval = F}
+# currently this won't work on tesla as eulerr requires R >3.3.1 and tesla's R is older...
+library(eulerr)
+all_unique_sites <- unlist(fdr_filtered_sites) %>% unique()
+
+#make logical matrix for if site exists in each region
+lgl_df <- map_df(fdr_filtered_sites, ~all_unique_sites %in% .x)
+fit <- euler(lgl_df)
+plot(fit, counts = TRUE, 
+     key = list(space = "left", columns = 1), 
+     fill = region_cols, 
+     fill_opacity = 0.75,
+     main = paste0(ref, "->", alt, " SNV with ANOVA FDR < 0.10\n"))
+```
+
+### plot heatmaps
+```{r get_variant_info}
+get_variant_info <- function(variant_info_file, ref, alt) {
+
+  variant_info <- read_tsv(variant_info_file,
+                         col_names = F)
+    colnames(variant_info) <- c("chrom", "start", "end", "REF", "ALT", "site", "strand", "EFF", "Disruption", "GeneName", "GeneID", "Nucleotide", "AminoAcid", "AllANNInfo", 'GENE_ID', 'BIOTYPE', 'TRANSCRIPT_ID', 'GENE_NAME', 'DENOVO_GENE_ID','DENOVO_TRANSCRIPT_ID', 'EXON_NUMBER', 'ANNOTATED')
+
+  variant_info_genenames <- variant_info %>% 
+    dplyr::select(chrom, site, GeneName, EFF, start) %>% 
+    mutate(GeneName = ifelse(is.na(GeneName), chrom, GeneName)) %>% 
+    mutate(gene_id_unique = paste(GeneName, EFF, start, sep = "::")) %>% 
+    dplyr::select(site, gene_id_unique)
+  variant_info_genenames
+}
+
+rename_sites_as_genes <- function(fdr_sites, variant_info_df){
+      fdr_sig_sites <- map(fdr_sites, ~as_data_frame(.x) %>% 
+      inner_join(., variant_info_df, by = c("value" = "site")) %>% 
+      dplyr::select(gene_id_unique) %>% unlist())
+}
+
+
+gene_variant_info <- get_variant_info(variant_info, ref, alt)
+fdr_sites_genes <- rename_sites_as_genes(fdr_filtered_sites, gene_variant_info)
+
+all_prop_dat_genes <- all_data_heatmap_matrix %>% 
+  tibble::rownames_to_column("site") %>% 
+  inner_join(., gene_variant_info, by = c("site")) %>% 
+  tibble::column_to_rownames(., "gene_id_unique") %>% 
+  dplyr::select(-site)
+
+all_sites <- unlist(fdr_sites_genes) %>% unique()
+
+```
+
+```{r plot_hmaps}
+get_sig_heatmap <- function(vector_of_sites, data_matrix_to_subset, title = "", pdata = pdata, ...){  
+  all_sig_sites <- data_matrix_to_subset[rownames(data_matrix_to_subset) %in% vector_of_sites, ]
+
+  n_sites = nrow(all_sig_sites)
+  
+  pdata <- data_frame( "names" = colnames(data_matrix_to_subset)) %>%
+      mutate(simple_names = str_extract(names, "[HBM][0-9]+")) %>%
+      inner_join(. , pdata, by = c("simple_names" = "animal_number")) %>%
+      dplyr::select(names, simple_names, State, region) %>% as.data.frame() %>% 
+      arrange(State)
+  
+  reordered_cols <- pdata$names %>% unlist()
+
+  all_sig_sites <- all_sig_sites[reordered_cols]
+
+  ha2 <- HeatmapAnnotation(df = pdata[c('State', 'region')], 
+                                      col = list(
+                                        region = region_cols,
+                                          State = state_cols
+                                                 ),
+                           annotation_legend_param = list(State = list(title = "Hiberation\nState",
+                                                                       at = state_order, labels = state_order)))
+  ht <- Heatmap(all_sig_sites, 
+          show_column_names = FALSE,
+          show_row_dend = FALSE,
+          top_annotation = ha2,
+          row_title = "Sites",
+          column_title = paste0(title, n_sites),
+          heatmap_legend_param = list(
+            title = "Editing\nFrequency"),
+          ...)
+  
+  draw(ht, annotation_legend_side = "left", heatmap_legend_side = "left")
+}
+
+names(pdata_groups) <- c("Medulla",
+                     "Hypothalamus",
+                     "Forebrain")
+
+pdata_all <- bind_rows(pdata_groups, .id = "region") %>%  
+  filter(grepl("_a$", g_names)) %>% 
+  dplyr::select(g_names, everything())
+
+###### print with rownames
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      show_row_names = TRUE, 
+                      cluster_rows = T)}, error = function(err) print(paste(err, " NA call in heatmap")))
+
+pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "sig_editing_sites_clustered_rnames.pdf"), useDingbats = F)
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      show_row_names = TRUE, 
+                      cluster_rows = T)}, error = function(err) print(paste(err, " NA call in heatmap")))
+dev.off()
+
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      cluster_rows = T,
+                      show_row_names = TRUE, 
+                      cluster_columns = F)}, error = function(err) print(paste(err, " NA call in heatmap")))
+
+pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "sig_editing_sites_not_clustered_rnames.pdf"), useDingbats = F)
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      cluster_rows = T,
+                      show_row_names = TRUE, 
+                      cluster_columns = F)}, error = function(err) print(paste(err, " NA call in heatmap")))
+dev.off()
+
+```
+
+```{r, fig.width=6}
+
+###### print without rownames
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      show_row_names = FALSE, 
+                      cluster_rows = T)}, error = function(err) print(paste(err, " NA call in heatmap")))
+
+pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "sig_editing_sites_clustered.pdf"), useDingbats = F)
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      show_row_names = FALSE,  
+                      cluster_rows = T)}, error = function(err) print(paste(err, " NA call in heatmap")))
+dev.off()
+
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      cluster_rows = T,
+                      show_row_names = FALSE, 
+                      cluster_columns = F)}, error = function(err) print(paste(err, " NA call in heatmap")))
+
+pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "sig_editing_sites_not_clustered.pdf"), useDingbats = F)
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      cluster_rows = T,
+                      show_row_names = FALSE, 
+                      cluster_columns = F)}, error = function(err) print(paste(err, " NA call in heatmap")))
+dev.off()
+```
+
+```{r}
+variant_info_df <- read_tsv(variant_info,
+                         col_names = F)
+
+ colnames(variant_info_df) <- c("chrom", "start", "end", "REF", "ALT", "site", "strand", "EFF", "Disruption", "GeneName", "GeneID", "Nucleotide", "AminoAcid", "AllANNInfo", 'GENE_ID', 'BIOTYPE', 'TRANSCRIPT_ID', 'GENE_NAME', 'DENOVO_GENE_ID','DENOVO_TRANSCRIPT_ID', 'EXON_NUMBER', 'ANNOTATED')
+
+ tt_exons_annotated <-  left_join(long_de_results, variant_info_df, 
+                                      by = "site")
+```
+
+### boxplots
+```{r}
+plot_all_sig_genes <- function(prop_dat, toptag_dat, stat_region = "Medulla", region_to_plot = "all",
+                         top_n_to_plot = 10 ) {
+    col_palette <- c(
+    SA = rgb(255, 0, 0, maxColorValue=255),
+    IBA = rgb(67, 205, 128, maxColorValue=255),
+    Ent = rgb(155, 48, 255, maxColorValue=255),
+    LT = rgb(25, 25, 112, maxColorValue=255),
+    Ar = rgb(0, 0, 255, maxColorValue=255),
+    SpD = rgb(255, 165, 0, maxColorValue=255) 
+  )
+
+  state_order = c(
+    "SA", "IBA", "Ent", "LT", "Ar", "SpD"
+  )
+
+  tt_dat_med <- filter_(toptag_dat, lazyeval::interp(quote(Region == x), x = stat_region)) %>% 
+    filter(row_number(FDR) <= top_n_to_plot) %>%  
+    dplyr::select(site) %>% unlist()
+  tt_dat_med <- filter(toptag_dat, site %in% tt_dat_med)
+  
+  if (!region_to_plot == "all"){
+    prop_dat <- prop_dat %>% filter_(lazyeval::interp(quote(Region == x), x = region_to_plot))
+  }
+  
+  plot_dat <- inner_join(prop_dat, tt_dat_med, by = c("site", "Region"))
+  
+  gene_labels <- plot_dat %>% dplyr::select(GeneName) %>% unlist()
+  names(gene_labels) <- plot_dat %>% dplyr::select(site) %>%  unlist()
+  
+  plot_dat <- mutate(plot_dat, 
+                State = factor(State, 
+                        levels = state_order))
+    
+  annot <- group_by(plot_dat, site, Region) %>%  summarize(FDR = signif(min(FDR), 3))
+
+  p <- ggplot(plot_dat, aes(State, proportion)) +
+    geom_boxplot(aes(fill = State), outlier.size = NA) +
+    geom_jitter(size = 1) +
+    facet_grid(Region~site, labeller = labeller(site = gene_labels)) + 
+    scale_fill_manual(values = col_palette, guide = guide_legend(nrow = 1)) +
+    geom_text(data = annot, aes(x = 3, y = 1.05, label = FDR ), size = 2) + 
+    ylab("proportion of reads with edited site") + 
+    theme(legend.position = "top",
+          axis.text.x = element_blank(),
+          strip.text.x = element_text(size = 10)
+          
+          )
+  p
+}
+
+plot_all_sig_genes(prop_dat = long_proportion_dat, toptag_dat = tt_exons_annotated)
+```
+
+### save objects
+```{r save_objects, eval = t}
+
+exon_sum_tidy <- group_by(long_proportion_dat, site, Region, State) %>%  
+  summarize(mean_proportion = mean(proportion, na.rm = T), sd_proportion = sd(proportion, na.rm = T))
+
+write_gztsv(long_proportion_dat, paste0(params$prefix, "/", params$dirname, "/", params$ref, "_", params$alt, "_filtered_sites_proportions_tidy.txt"))
+
+write_gztsv(exon_sum_tidy, paste0(params$prefix, "/", params$dirname, "/", params$ref, "_", params$alt, "_mean_editing.txt"))
+
+write_gztsv(tt_exons_annotated, paste0(params$prefix, "/", params$dirname,  "/", params$ref, "_", params$alt, "_filtered_sites_annotation.txt"))
+
+```
+
+
+### filter out impactful variants and replot
+
+```{r get_impactful}
+impact_exons_annotated <- tt_exons_annotated %>% 
+  filter(str_detect(Disruption, "HIGH|MODERATE"))
+
+filter(impact_exons_annotated, FDR < 0.10) %>% 
+  dplyr::select(site) %>% 
+  unlist() %>% 
+  unique() -> sig_impactful_variants
+
+
+# get data for venn
+fdr_filtered_sites <- select_fdr_sites(impact_exons_annotated)
+
+#plot venn
+tryCatch({venn <- plot_venn(fdr_filtered_sites, 
+                            paste0("Impactful variants ", ref, "->", alt, "\n SNV with ANOVA FDR < 0.10\n"))},
+         error = function(err) print(paste(err, " not enough sites")))
+
+plot_grid(venn)
+
+#get sites as gene-names
+fdr_sites_genes <- rename_sites_as_genes(fdr_filtered_sites, gene_variant_info)
+all_sites <- unlist(fdr_sites_genes) %>% unique()
+
+###### print with rownames
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      show_row_names = TRUE, 
+                      cluster_rows = T)}, error = function(err) print(paste(err, " NA call in heatmap")))
+
+pdf(paste0(prefix, "/", outname,  "/", ref, "_", alt, "impactful_sig_editing_sites_clustered_rnames.pdf"), useDingbats = F)
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      show_row_names = TRUE, 
+                      cluster_rows = T)}, error = function(err) print(paste(err, " NA call in heatmap")))
+dev.off()
+
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      cluster_rows = T,
+                      show_row_names = TRUE, 
+                      cluster_columns = F)}, error = function(err) print(paste(err, " NA call in heatmap")))
+
+pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "impactful_sig_editing_sites_not_clustered_rnames.pdf"), useDingbats = F)
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      cluster_rows = T,
+                      show_row_names = TRUE, 
+                      cluster_columns = F)}, error = function(err) print(paste(err, " NA call in heatmap")))
+dev.off()
+
+###### print without rownames
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      show_row_names = FALSE, 
+                      cluster_rows = T)}, error = function(err) print(paste(err, " NA call in heatmap")))
+
+pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "impactful_sig_editing_sites_clustered.pdf"), useDingbats = F)
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      show_row_names = FALSE,  
+                      cluster_rows = T)}, error = function(err) print(paste(err, " NA call in heatmap")))
+dev.off()
+
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      cluster_rows = T,
+                      show_row_names = FALSE, 
+                      cluster_columns = F)}, error = function(err) print(paste(err, " NA call in heatmap")))
+
+pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "impactful_sig_editing_sites_not_clustered.pdf"), useDingbats = F)
+tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
+                      title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
+                      pdata_all,
+                      row_names_gp = gpar(fontsize = 8),
+                      cluster_rows = T,
+                      show_row_names = FALSE, 
+                      cluster_columns = F)}, error = function(err) print(paste(err, " NA call in heatmap")))
+dev.off()
+
+long_proportion_dat <- long_proportion_dat[long_proportion_dat$site %in% sig_impactful_variants, ]
+p <- plot_all_sig_genes(prop_dat = long_proportion_dat, toptag_dat = impact_exons_annotated)
+tryCatch(print(p), error = function(e) print(paste(e, " not enough sig sites to plot")))
+
+exon_sum_tidy <- group_by(long_proportion_dat, site, Region, State) %>%  
+  summarize(mean_proportion = mean(proportion, na.rm = T), sd_proportion = sd(proportion, na.rm = T))
+
+write_gztsv(long_proportion_dat, paste0(params$prefix, "/", params$dirname, "/", params$ref, "_", params$alt, "_impactful_sites_proportions_tidy.txt"))
+
+write_gztsv(exon_sum_tidy, paste0(params$prefix, "/", params$dirname, "/", params$ref, "_", params$alt, "_impactful_mean_editing.txt"))
+
+write_gztsv(impact_exons_annotated, paste0(params$prefix, "/", params$dirname, "/", params$ref, "_", params$alt, "_impactful_sites_annotation.txt"))
+
+
+```
