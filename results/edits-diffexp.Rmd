@@ -1,0 +1,263 @@
+---
+title: "Expression Levels of introns/exons containing editing sites"
+author: "Kent Riemondy RBI"
+date: "9/19/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Is editing correleated transcript abundance changes and splicing?
+
+Based on analysis of DEXSeq analysis very few genes have splicign changes that also have editing sites, suggesting that splicing and editing are independent. Similarly EdgeR anslsysi of gene expression values shows only a small number of shared editing and abundance changes. Importantly for those sites that are found in transcripts that are altered (abundance or splicing) there is no consistent trend (genes/exons go both up and down). I'd like to refine this analysis and produce a set of summary figures for these conclusions. 
+
+## Abundance level changes
+
+```{r venn_diagrams}
+# show overlap between genes that have editing events and are altered at the abundance level
+
+edits <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_filtered_sites_annotation.txt.gz")
+
+#remove intergenic variants
+sig_edits <- dplyr::filter(edits, 
+                    FDR < 0.01,
+                    EFF != "intergenic_region,custom",
+                    !is.na(GeneID))
+
+#kmeans classification
+kmean_class <- read_tsv("edits/A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz")
+kmean_class1 <- dplyr::select(kmean_class, 
+                             site, kmeans_cluster) %>% 
+  dplyr::filter(kmeans_cluster == 1)
+
+sig_edits <- dplyr::filter(sig_edits, site %in% kmean_class1$site)
+# get log2FC values
+lrt_dat <- map(region_order,
+           ~read_tsv(paste0("mrna/", .x, "_lrt_results.txt"),
+                     col_names = T))
+names(lrt_dat) <- region_order
+# read in data, ignorning col names because there are only nfields - 1 colnames
+dat <- map(region_order,
+           ~read_tsv(paste0("mrna/", .x, "_normalized_counts.txt"),
+                     col_names = F, 
+                     skip = 1))
+
+# get column names as vector and add in a transcript field at startd
+cnames <- map(region_order,
+           ~read_tsv(paste0("mrna/", .x, "_normalized_counts.txt"),
+                     col_names = F,
+                     n_max = 1) %>% 
+             .[1, ] %>% 
+             unlist() %>% 
+             c("transcript", .))
+names(dat) <- region_order
+
+# assign column names...
+for (i in seq_along(dat)) {
+  colnames(dat[[i]]) <- cnames[[i]]
+}  
+
+# only keep transcripts in lrt tests
+dat <- map2(dat, lrt_dat, ~dplyr::filter(.x, transcript %in% .y$denovo_id))
+```
+
+```{r}
+fq_names <- map(dat, ~colnames(.x)[-1]) %>% unlist() %>% unname()
+# get pdata about animal state
+pdata <- read_tsv(file.path(docs_dir, "BrainRegionRNAseqLibMetadata.txt"))
+pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+  
+pdata <- mutate(pdata, 
+                abbrev_sample = str_split(sample, "_", simplify = T)[, 1]) %>% 
+  dplyr::rename(long_sample = sample)
+
+animal_number <- str_extract(fq_names, "[MHB][0-9]+")
+
+fq_dat <- data_frame(sample = fq_names, 
+                     animal_number)
+
+pdata <- inner_join(fq_dat, 
+                    pdata, 
+                    by = c("animal_number" = "abbrev_sample"))
+
+simplified_pdata <- dplyr::select(pdata, sample, State, region) %>% 
+  unique() %>% 
+  mutate(State = factor(State, 
+                        levels = c("SA", "IBA", "Ent", "LT", "Ar", "SpD")))
+
+```
+
+
+```{r fix_annotations}
+#edgeR geneIds are from stringtie taco (e.g. G1, G2, etc)
+# current LRT objects have appropriate ensemble ids, but no coordinates for intersecting with the edits...
+stringtietaco <- read_tsv("mrna/fixed_all95.bed.gz", col_names = F)
+e89 <- read_tsv("mrna/Ictidomys_tridecemlineatus.spetri2.89.bed.gz", col_names = F)
+
+annotations <- list(stringtietaco, e89)
+names(annotations) <- c("denovo", "e89")
+
+annotations  <- map(annotations, ~dplyr::select(.x, -(X4:X5)))
+bed_cols <- c("chrom",
+              "start",
+              "end",
+              "strand")
+colnames(annotations[["denovo"]]) <- c(bed_cols, 
+                                       "biotype", "denovo_gid", 
+                                       "denovo_tid", "gene_id", 
+                                       "transcript_id", "gene_name", "region")
+colnames(annotations[["e89"]]) <- c(bed_cols,
+                                    "biotype", "gene_id", 
+                                    "transcript_id", "gene_name", "region")
+annotations <- map(annotations, ~dplyr::filter(.x, region == "transcript") %>% 
+                     dplyr::select(-region) %>% unique())
+
+# map denovo ids to transcript for denovo, remove na containing ids from e89
+annotations[["e89"]] <- filter(annotations[["e89"]], 
+                               !is.na(transcript_id))
+annotations[["denovo"]] <- mutate(annotations[["denovo"]], 
+                                  transcript_id = ifelse(is.na(transcript_id), 
+                                                               denovo_tid,
+                                                               transcript_id))
+# join annotation tables using transcript id
+annotations <- left_join(annotations[["denovo"]],
+                         annotations[["e89"]],
+                         by = "transcript_id",
+                         suffix = c("", "_ensembl"))
+
+#drop transcript ids and merge duplicated annotation fields into csv fields
+annotations <- dplyr::select(annotations, -denovo_tid, -transcript_id)
+annotations <- annotations %>% 
+  group_by(denovo_gid) %>% 
+  summarize(biotypes = valr::values_unique(biotype),
+            gene_ids = valr::values_unique(gene_id), 
+            gene_names = valr::values_unique(gene_name),
+            gene_name_ensembl = valr::values_unique(gene_name_ensembl),
+            biotypes_ensembl = valr::values_unique(biotype_ensembl),
+            start = min(start, na.rm = T),
+            end = max(end, na.rm = T),
+            chrom = valr::values_unique(chrom))
+
+gids <- map(dat, ~.x$transcript) %>% unlist() %>% unname() %>% unique()
+## get list of geneids and build dataframe of annotations
+annotations <- left_join(data_frame(genes = gids), 
+                         annotations, by = c("genes" = "denovo_gid"))
+
+annotated_edits <- bed_intersect(sig_edits,
+                                 annotations)
+
+# only keep annotations for editing sites overlapping a single gene
+annotated_edits <- dplyr::select(annotated_edits,
+                                 site.x, 
+                                 genes.y,
+                                 Region.x) %>% 
+  group_by(site.x) %>% 
+  dplyr::mutate(n = length(unique(genes.y)),
+            genes = values_unique(genes.y)) %>% 
+  dplyr::filter(n == 1) %>% 
+  dplyr::select(-n, -genes.y) %>% 
+  unique()
+
+```
+
+
+```{r ecdfs}
+
+mean_center <- function(mat) {
+  #log + 1 and mean center
+  mat <- log2(mat + 1)
+  mat <- mat - rowMeans(mat)
+  mat
+}
+
+
+scaled_dat <- map(dat,
+                  ~bind_cols(.x[, 1], 
+                             mean_center(.x[, -c(1)])))
+
+tidy_dat <- map(scaled_dat,
+                    ~as_data_frame(.x) %>% 
+  tbl_df() %>% 
+  gather(key = "library", 
+         value = "normalized_counts", 
+         -transcript) )
+
+names(tidy_dat) <- region_order
+
+# get pdata
+tidy_dat <- map(tidy_dat, ~inner_join(.x, unique(pdata), 
+                                       by = c("library" = "sample")))
+
+tidy_df <- bind_rows(tidy_dat, .id = "Region")
+
+# set order
+tidy_df <- mutate(tidy_df, 
+                  State = factor(State, levels = state_order))
+
+tidy_df <- left_join(tidy_df, annotated_edits,
+                     by = c("transcript" = "genes", "Region" = "Region.x"))
+
+# select edited transcripts
+tidy_df <- dplyr::filter(tidy_df, !is.na(site.x))
+tidy_df <- group_by(tidy_df, Region) %>% 
+  mutate(n = length(unique(transcript)),
+         edited = ifelse(is.na(site.x), 
+                         "not_edited",
+                         "edited"))
+
+# summarize and show as mean +/- sd
+summary_dat <- group_by(tidy_df, State, Region, n, edited) %>% 
+  summarize(mean_counts = mean(normalized_counts, na.rm = T),
+            sd_counts = sd(normalized_counts, na.rm = T))
+
+tx_counts <- tidy_df %>% 
+  dplyr::select(State, Region, n, normalized_counts, edited) %>% 
+  ungroup() %>% 
+  mutate(x = 2, y = max(normalized_counts) * 1.25,
+         n = paste0("n = ", n)) %>% 
+  unique()
+
+
+ggplot(tidy_df, aes(State, normalized_counts)) +
+ geom_violin(aes(fill = State)) +
+ facet_wrap(~Region, nrow = 3, strip.position = "right") +
+ geom_hline(yintercept = 0, linetype = "dashed") + 
+ geom_text(aes(x = x, y = y, group = State, label = n), 
+            data = tx_counts,
+            check_overlap = T) +
+ scale_fill_manual(values = state_cols) +
+  theme(legend.position = "none",
+        axis.text.x = element_text(colour = state_cols)) +
+  ylab("Normalized counts (Z-Score)")
+
+ggsave(file.path("mrna", "avg_expression_edited_sites.pdf"), width = 7, height = 7 )
+```
+
+
+## Exon usage changes
+
+```{r boxplots}
+# show log2 normalized exon levels at each hibernation state for edited versus unedited transcripts for either exons and intronic edits alone, or in combination (there are ony a handful of exonic edits)
+```
+
+
+## Abundance level changes
+
+```{r venn_diagrams}
+# show overlap between genes that have editing events and are altered at the abundance level
+```
+
+
+```{r ecdfs}
+# show log2 normalized expression ecdfs at each hibernation state for edited versus unedited transcripts
+
+```
+
+
+
+```{r boxplots}
+# show log2 normalized expression at each hibernation state for edited versus unedited transcripts
+```

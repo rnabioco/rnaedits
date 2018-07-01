@@ -1,0 +1,273 @@
+---
+title: "edits-stability"
+author: "Kent Riemondy RBI"
+date: "10/2/2017"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+source("globals.R")
+```
+
+
+
+## Examine stability versus novel editing
+
+The editing frequencies were tested at early and late torpor for two intronic sites (Chd9, and Fbx). The editing frequencies strongly increase in LT versus ET from ~18 to ~69% for FBX and ~12 to ~38 for Chd9. However there is already quite a bit of editing occuring at the ET stage, suggesting that the increase in editing frequency could be due to stabilization of the diting message or novel editing. 
+
+TO get some idea about stability versus de novo editing I will compare the CPMs for each site for the reference allele or the edited allele (on a per site basis). 
+
+```{r load_cpms, message = F}
+
+# just look at A to G for now
+cpms <- dir("edits/variant_allele_counts_by_strand/A_G_alleles",
+            recursive = T, 
+            pattern = "normalized_cpms.txt",
+            full.names = T)
+cpms <- cpms[!str_detect(cpms, "trimmed")]
+
+dat <- map(cpms, ~read_tsv(.x, col_names = T))
+
+# keep sites in any of the three regions
+
+dat <- full_join(dat[[3]], 
+           full_join(dat[[1]],
+                      dat[[2]], by = "site"), 
+           by = "site")
+
+# load in sig sites
+sig_edits <- read_tsv("edits/A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz")
+sig_edits <- dplyr::filter(sig_edits, 
+                           kmeans_cluster == 1) %>% 
+  dplyr::pull(site)
+
+# get sig hyperedited
+hyper <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation_kmeans.txt.gz")
+
+hyper <- dplyr::filter(hyper, 
+                       FDR < 0.01,
+                       kmeans_cluster != 3) %>% 
+  dplyr::pull(site)
+
+cpms <- dir("hyperedits/diffedits/",
+            recursive = T, 
+            pattern = "normalized_cpms.txt",
+            full.names = T)
+cpms <- cpms[!str_detect(cpms, "trimmed")]
+
+hyper_dat <- map(cpms, ~read_tsv(.x, col_names = T))
+
+# keep sites in any of the three regions
+
+hyper_dat <- full_join(hyper_dat[[3]], 
+           full_join(hyper_dat[[1]],
+                      hyper_dat[[2]], by = "site"), 
+           by = "site")
+
+sig_hyper_dat <- semi_join(hyper_dat, data_frame(site = hyper), 
+                     by = "site")
+
+#keep only sig sites
+sig_dat <- semi_join(dat, data_frame(site = sig_edits), 
+                     by = "site")
+
+#sanity check before binding
+all(colnames(sig_hyper_dat) == colnames(dat))
+
+#only keep unique hyperedited sites
+sig_hyper_dat <- dplyr::filter(sig_hyper_dat, 
+                               !site %in% sig_dat$site)
+
+sig_dat <- bind_rows(sig_dat, sig_hyper_dat)
+
+dat <- as.data.frame(sig_dat)
+rownames(dat) <- dat[, 1]
+dat <- dat[, -1]
+
+a_dat <- dat[, str_detect(colnames(dat), "_a$")]
+b_dat <- dat[, !str_detect(colnames(dat), "_a$")]
+
+a_dat[is.na(a_dat) ] <- 0
+b_dat[is.na(b_dat) ] <- 0
+# do not plot z-scores, instead just plot normalized CPMs
+#a_dat <- t(scale(t(a_dat)))
+#b_dat <- t(scale(t(b_dat)))
+
+```
+
+
+
+```{r}
+pdata_file <- file.path(docs_dir, "BrainRegionRNAseqLibMetadata.txt")
+ 
+plot_hmap <- function(b_dat, pdata_file, 
+                      row_ordering = NULL,
+                      column_ordering = NULL,
+                      show_annotation_legend = T, 
+                      ...){
+  # make_groups
+  if(!is.null(row_ordering)) b_dat <- b_dat[row_ordering, column_ordering]
+  g_names <- colnames(b_dat)
+  animal_number <- str_extract(g_names, "[MHB][0-9]+")
+    
+   # allele_type <- rep(c("A", "G"), each = 30)
+  groups <- data_frame(g_names, animal_number)
+    
+  pdata <- readr::read_tsv(pdata_file)
+    
+  pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+  pdata <- mutate(pdata,
+                region = ifelse(region == "Forebrain",
+                                "Cerebrum",
+                                region))
+  
+  pdata <- mutate(pdata, 
+                    abbrev_sample = str_split(sample, "_", simplify = T)[, 1])
+    
+  pdata <- inner_join(groups, 
+                        pdata, 
+                        by = c("animal_number" = "abbrev_sample")) %>%
+      dplyr::select(g_names, animal_number, State, region)
+  
+  pdata_heatmap <- data_frame( "names" = colnames(b_dat)) %>%
+        inner_join(., pdata, by = c("names" = "g_names")) %>%
+        dplyr::select(names, State, region) %>% as.data.frame() %>% 
+        arrange(State)
+  
+  reordered_cols <- pdata_heatmap$names %>% unlist()
+  
+  b_dat <- b_dat[, reordered_cols]
+  
+  ha2 <- HeatmapAnnotation(df = pdata_heatmap[, c('State', 'region')], 
+                                      col = list(
+                                        region = region_cols,
+                                          State = state_cols
+                                                 ),
+                           show_legend = show_annotation_legend,
+                           annotation_legend_param = list(
+                             State = list(title = "Hibernation\nState",
+                                          at = state_order, labels = state_order)))
+
+  ha <- Heatmap(b_dat,
+          show_row_names = F, 
+          show_column_names = F,
+          top_annotation = ha2,
+          ...)
+  ha
+}
+
+# precompute some values
+new_values <- plot_hmap(b_dat, pdata_file, 
+                           show_row_dend = T)
+           
+# order ha1 columns based on ha2
+ha2 <- plot_hmap(b_dat, pdata_file, 
+                           show_row_dend = F, 
+          row_title = "Significant Editing Sites", 
+          column_title = "G\ncounts",
+          heatmap_legend_param = list(
+            title = "G Nucleotide\nNormalized\nCPM"
+            ))
+new_col_order <- colnames(a_dat)[match(labels(column_dend(new_values)),
+                                       colnames(b_dat))]
+new_row_order <- rownames(a_dat)[match(labels(row_dend(new_values)[[1]]),
+                                       rownames(b_dat))]
+ha1 <- plot_hmap(a_dat, pdata_file, 
+                 show_annotation_legend = F,
+                 row_ordering = new_row_order,
+                 column_ordering = new_col_order,
+                 show_row_dend = F, 
+                 cluster_columns = F,
+                 cluster_rows = F,
+                 column_order = new_col_order,
+                 row_order = new_row_order ,
+                 row_title = "Significant Editing Sites", 
+                 column_title = "A\ncounts",
+                 heatmap_legend_param = list(
+                   title = "A Nucleotide\nNormalized\nCPM")
+                )
+
+
+draw(ha1 + ha2)
+
+pdf("hyperedits/a_and_g_cpms.pdf")
+draw(ha1 + ha2)
+dev.off()
+```
+
+
+## Next plot summary of A and G normalized counts across states
+
+```{r tidy_dat}
+
+pdata <- readr::read_tsv(pdata_file)
+    
+pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+    
+pdata <- mutate(pdata, 
+                    abbrev_sample = str_split(sample, "_", simplify = T)[, 1])
+
+library <- colnames(dat)
+animal_number <- str_extract(library, "[MHB][0-9]+")
+    
+   # allele_type <- rep(c("A", "G"), each = 30)
+groups <- data_frame(library, animal_number)
+  
+pdata <- inner_join(groups, 
+                        pdata, 
+                        by = c("animal_number" = "abbrev_sample")) %>%
+      dplyr::select(library, animal_number, State, region)
+
+long_dat <- gather(sig_dat, 
+                   "library", "cpm", 
+                   -site)
+
+long_dat <- left_join(long_dat, pdata)
+long_dat <- mutate(long_dat,
+                   allele = ifelse(str_detect(library,
+                                              "a$"),
+                                   "A",
+                                   "G"))
+
+summary_dat <- long_dat %>% 
+  group_by(region, State, allele) %>% 
+  summarize(mean = mean(cpm, na.rm = T),
+            sd = sd(cpm, na.rm = T)) %>% 
+  ungroup()
+
+summary_dat <- mutate(summary_dat,
+                      State = factor(State,
+                                     levels = state_order),
+                region = ifelse(region == "Forebrain",
+                                "Cerebrum",
+                                region))
+
+p <- ggplot(summary_dat, aes(State, mean)) +
+  geom_smooth(method = "loess",
+              aes(group = allele), 
+              show.legend = T, se = F, colour = "black") +
+  geom_point(aes(colour = region), show.legend = T) +
+  facet_wrap(~allele,
+             labeller = labeller(allele = c(A = "A containing reads",
+                                            G = "G containing reads"))) +
+  scale_colour_manual(name = "Region", 
+                      values = c(region_cols)) +
+  ylab("Mean Normalized CPM") + 
+  theme(
+    axis.text.x = element_text(colour = state_cols),
+    axis.title.x = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "top"
+  )
+ p 
+save_plot("hyperedits/a_vs_g_cpms_average.pdf", p, base_width = 4)
+```  
+## Conclusions:
+
+It appears that the total abundance of the G containing reads increases in torpid animals. This increase also correlated with descreases in A contianing reads. The most likely explanation for this observation is increased de novo editing in the cold. If we assume that their is no transcription in the cold, then if the increase in editing was due to reduced stability of A containing reads compared to G, then the normalized abundance of G containing reads should not increase, but should instead remain relatively constant, with the A containing reads decreasing. Instead we observe that the number of G reads increases. The ereduced abundance of A containing reads is expected if there is no de novo transcription, as a read by definition must convert from A to G once edited, thus reducing the pool of A containing reads. 

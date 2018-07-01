@@ -1,0 +1,1005 @@
+---
+title: "edits-hyperedits-features"
+author: "Kent Riemondy RBI"
+date: "10/16/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+## Analyze editing site features
+  Include hyperedited and gatk identified sites. 
+  
+## Examine nucleotide preferences upstream and downstream of editing sites
+
+```{r ,message=FALSE, warning=FALSE, cache = F}
+source("globals.R")
+```
+
+```{r read_in_dat}
+genome <- read_genome(file.path(db_dir, 
+                                "ensembl85/chrom_sizes.txt"))
+fasta <-  path.expand(file.path(db_dir, 
+                                "ensembl85", "Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa"))
+
+dat <- read.table("edits/A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz",
+                header = T,
+                sep = "\t", stringsAsFactors = F) %>% as_data_frame()
+dat <- dplyr::filter(dat, 
+                       kmeans_cluster == 1)
+                     
+hyper <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation_kmeans.txt.gz")
+hyper <- dplyr::filter(hyper, 
+                       FDR < 0.01,
+                       kmeans_cluster != 3)
+
+edits <- list(dat, hyper)
+names(edits) <- c("GATK", "Hyperediting")
+edits <- bind_rows(edits, .id = "pipeline")
+
+# annotate if found in both
+
+edits %>% 
+  dplyr::select(chrom, start, strand, pipeline) %>% 
+  unique() %>% 
+  dplyr::group_by(chrom, start, strand) %>% 
+  mutate(sites = n(),
+         pipeline = ifelse(sites > 1,
+                           "both",
+                           pipeline)) %>% 
+  ungroup() -> pipeline_used
+
+edits <- left_join(edits, pipeline_used,
+                   by = c("chrom", "start", "strand")) %>% 
+  mutate(pipeline = ifelse(pipeline.y == "both",
+                           "both",
+                           pipeline.x)) %>% 
+  dplyr::select(-sites, -pipeline.x, -pipeline.y) %>% 
+  unique()
+
+
+# make bed like file
+bed <- dplyr::mutate(edits, 
+                     score = 0.0) %>% 
+dplyr::select(chrom,
+              start, #derived from bed file, zero based
+              end,
+              site,
+              score,
+              strand, 
+              pipeline) %>% 
+  unique()
+
+
+slop_bed <- bed_slop(bed, both = 5, genome)
+
+# get sequences and convert Ts to Us
+seqs <- kentr::get_sequences(slop_bed, fasta) %>% 
+  mutate(seq = str_replace_all(seq, "[Tt]", "U"))
+
+# get gatk
+gatk <- dplyr::filter(seqs, pipeline != "Hyperediting")
+dir.create("hyperedits/motifs", recursive = T)
+kentr::write_fasta(gatk, "hyperedits/motifs/bp10_gatk.fasta")
+
+hyperediting <- dplyr::filter(seqs, pipeline != "GATK")
+kentr::write_fasta(hyperediting, "hyperedits/motifs/bp10_hyperediting.fasta")
+
+
+kentr::write_fasta(seqs, "hyperedits/motifs/bp10_both.fasta")
+
+
+## also generate a set of interval from non-significant sites
+
+hyper_edits <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation_kmeans.txt.gz")
+hyper_edits_non_sig <- hyper_edits %>% 
+  dplyr::filter(FDR > 0.01)
+
+gatk_non_sigsites <- read_tsv("edits/A_G_filtered_notsignificant_sites_annotation_kmeans.txt.gz")
+gatk_non_sigsites <- gatk_non_sigsites %>% 
+  dplyr::select(chrom, start, end, 
+                strand, site, EFF, FDR, 
+                GeneName:ANNOTATED) %>% 
+  unique()
+
+shared_sites <- semi_join(hyper_edits_non_sig, gatk_non_sigsites, 
+                           by = c("site"))
+
+# make bed like file
+nonsig_bed <- dplyr::mutate(shared_sites, score = 0) %>% 
+              dplyr::select( chrom,
+              start,
+              end,
+              site,
+              score,
+              strand) %>% 
+  unique()
+
+nonsig_slop_bed <- bed_slop(nonsig_bed, both = 5, genome)
+
+# get sequences and convert Ts to Us
+nonsig_slop_seq <- kentr::get_sequences(nonsig_slop_bed, fasta) %>% 
+  mutate(seq = str_replace_all(seq, "[Tt]", "U"))
+
+kentr::write_fasta(nonsig_slop_seq, "hyperedits/motifs/bp10_nonsig.fasta")
+```
+
+
+```{r generate_random_sites}
+
+## get transcript boundaries for grouping edits into transcripts
+stringtietaco <- read_tsv(file.path(db_dir, "denovo_annotation/fixed.all95.gtf"), 
+                     col_names = F) 
+stringtietaco <- dplyr::select(stringtietaco, 
+                        X1, X4, X5, X8, X6, X7, X2, X3, X9 ) %>% 
+  mutate(X4 = X4 - 1) 
+
+cnames <- c("chrom", "start", "end", "name", "score", "strand", 
+            "source", "region", "attr")
+colnames(stringtietaco) <- cnames
+stringtietaco <- mutate(stringtietaco,
+                        geneid = str_match(attr, 
+                                           "gene_id \\\"([^;]+)\\\";")[, 2] ) %>% 
+  filter(grepl("exon|transcript", region))
+
+#bed = signficant editing sites
+bed <- group_by(bed, strand)
+stringtietaco <- group_by(stringtietaco, strand)
+edits_transcripts <- valr::bed_intersect(bed,
+                  stringtietaco)
+
+# determine if edit overlaps an intron or exon
+group_by(edits_transcripts, chrom, start.x, end.x, site.x, strand.x) %>% 
+  mutate(overlaping_region = ifelse("transcript" %in% region.y && "exon" %in% region.y,
+                                    "exon",
+                                    "intron")) %>% 
+  dplyr::select(geneid.y, overlaping_region) %>% 
+  ungroup() -> edits_transcripts
+
+# pull in all exonic regions from overlapping genes or transcript regions for intronic overlaps
+edits_transcripts <- left_join(edits_transcripts, stringtietaco, 
+          by = c("geneid.y" = "geneid"))
+
+# filter to select exons or transcript
+edits_transcripts <- filter(edits_transcripts, 
+                            overlaping_region == "exon" & region == "exon" |
+                              overlaping_region == "intron" & region == "transcript") %>% 
+  unique()
+
+# drop unnecessary cols
+edits_transcripts <- dplyr::select(edits_transcripts, 
+                            chrom.x:strand) %>% 
+  dplyr::select(-name, -score) %>% 
+  dplyr::rename(
+    start.y = start,
+    end.y = end,
+    strand.y = strand,
+    chrom = chrom.x, 
+    start = start.x,
+    end = end.x,
+    strand = strand.x) %>% 
+  unique()
+
+#merge gene_ids
+group_by(edits_transcripts, chrom, start, end, 
+         site.x, strand) %>% 
+  mutate(gene_ids = values_unique(geneid.y)) %>% 
+  ungroup() -> edits_transcripts
+
+# summarize which gene each edit is associated with
+edits_tx_summary <- tidyr::nest(edits_transcripts,
+                              -c(chrom, start, end, site.x, 
+                                 strand, gene_ids)) 
+edits_tx_summary <- ungroup(edits_tx_summary)
+
+edits_tx_summary <- mutate(edits_tx_summary, 
+         data = map2(data, chrom, 
+                           ~mutate(.x, 
+                                   chrom = .y) %>% 
+                             dplyr::rename(start = start.y,
+                                    end = end.y,
+                                    strand = strand.y)))
+
+#merge intervals, keep strand
+edits_tx_summary <- mutate(edits_tx_summary, 
+        data = map(data, 
+                         ~bed_merge(.x, strand = values_unique(strand))))
+
+# add in sequences to dataframe
+edits_tx_summary <- mutate(edits_tx_summary, 
+        data = map(data, 
+                         ~kentr::get_sequences(.x, 
+                                              fasta_path = fasta)))
+
+# sort bed ivl, then splice sequences together
+# need to keep track of genomic location of each sequence for reporting shuffled edit position
+
+# get 1 region per site
+edits_tx_summary <- edits_tx_summary %>% 
+  mutate(data = map(data, ~dplyr::sample_n(.x, 1))) 
+
+# get genomic positions of all A nucleotides
+# in a strand specific manner
+# in the future make this a function...
+pos_shuffled_edits <- mutate(edits_tx_summary, 
+               tmp_dat = map(data, 
+                                 ~mutate(.x, 
+                                         a_loc = str_locate_all(seq, "A"),
+                                         genome_loc = ifelse(strand == "-",
+                                map(a_loc,
+                                    ~end - .x ),
+                                map(a_loc,
+                                    ~start + .x - 1))) %>% 
+                               summarize(positions = list(unlist(genome_loc)))))
+
+pos_shuffled_edits <- mutate(pos_shuffled_edits,
+       tmp_dat = flatten(tmp_dat),
+       tmp_dat = flatten(tmp_dat))# combine all locations into 1 vector
+
+#sample genomic position from list of positions 
+set.seed(20171017)
+
+pos_shuffled_edits <- mutate(pos_shuffled_edits,
+       new_pos = map_dbl(tmp_dat, 
+                   ~base::sample(.x, 1)),
+       start = new_pos,
+       end = start + 1)  %>% 
+  dplyr::select(-tmp_dat, -data, -new_pos)
+
+write_tsv(pos_shuffled_edits, "hyperedits/shuffled_editing_sites.bed")
+
+
+shuffled_slop_bed <- bed_slop(pos_shuffled_edits, both = 5, genome)
+
+# get sequences and convert Ts to Us
+shuffled_slop_seq <- kentr::get_sequences(shuffled_slop_bed, fasta) %>% 
+  mutate(seq = str_replace_all(seq, "[Tt]", "U"))
+
+kentr::write_fasta(shuffled_slop_seq, "hyperedits/motifs/bp10_shuffled.fasta")
+
+```
+
+### get editing sites from RADAR db
+
+```{r}
+
+if(!file.exists("edits/motifs/Human_AG_all_hg19_v2.txt.gz")){
+  download.file("http://lilab.stanford.edu/GokulR/database/Human_AG_all_hg19_v2.txt", 
+              "edits/motifs/Human_AG_all_hg19_v2.txt")
+  R.utils::gzip("edits/motifs/Human_AG_all_hg19_v2.txt", remove = T, overwrite = T)
+}
+
+if(!file.exists("edits/motifs/Mouse_AG_all_mm9_v2.txt.gz")){
+  download.file("http://lilab.stanford.edu/GokulR/database/Mouse_AG_all_mm9_v2.txt", 
+              "edits/motifs/Mouse_AG_all_mm9_v2.txt")
+  R.utils::gzip("edits/motifs/Mouse_AG_all_mm9_v2.txt", remove = T, overwrite = T)
+}
+```
+
+```{r}
+
+### human radar database
+dat <- read.table("edits/motifs/Human_AG_all_hg19_v2.txt.gz",
+                header = T,
+                sep = "\t", stringsAsFactors = F) %>% as_data_frame()
+
+fasta <- "~/Projects/shared_dbases/genomes/hg19.fa"
+genome <- read_genome("~/Projects/shared_dbases/genomes/hg19.chrom.sizes")
+# make bed like file
+bed <- dplyr::rename(dat, 
+              chrom = chromosome,
+              start = position
+              ) %>% 
+ # dplyr::filter(alu. == "no") %>% #exclude alu editing sites
+  mutate(end = start,
+         start = start - 1) %>% 
+  dplyr::select(chrom, start, end, strand) %>% 
+  unique()
+
+slop_bed <- bed_slop(bed, both = 5, genome)
+
+seqs <- kentr::get_sequences(slop_bed, fasta) %>% 
+  mutate(seq = str_replace_all(seq, "[Tt]", "U"))
+
+#seqs <- filter(seqs, strand == "+")
+kentr::write_fasta(seqs, "hyperedits/motifs/radar_hg19.fasta")
+paste0("there are ", nrow(seqs), " hg19 editing sites")
+```
+
+```{r}
+### mouse data from radar
+
+dat <- read.table("edits/motifs/Mouse_AG_all_mm9_v2.txt.gz",
+                header = T,
+                sep = "\t", stringsAsFactors = F) %>% as_data_frame()
+
+fasta <- "~/Projects/shared_dbases/genomes/mm9.fa"
+genome <- read_genome("~/Projects/shared_dbases/genomes/mm9.chrom.sizes")
+# make bed like file
+bed <- dplyr::rename(dat, 
+              chrom = chromosome,
+              start = position
+              ) %>% 
+  mutate(end = start,
+         start = start - 1) %>% 
+  dplyr::select(chrom, start, end, strand) %>% 
+  unique()
+
+slop_bed <- bed_slop(bed, both = 5, genome)
+
+seqs <- kentr::get_sequences(slop_bed, fasta) %>% 
+  mutate(seq = str_replace_all(seq, "[Tt]", "U"))
+
+#seqs <- filter(seqs, strand == "+")
+kentr::write_fasta(seqs, "hyperedits/motifs/radar_mm9.fasta")
+
+paste0("there are ", nrow(seqs), " mm9 editing sites")
+```
+
+### run weblogo to examine nucleotide preference
+
+```{bash, cache = F}
+for fasta in hyperedits/motifs/*.fasta
+do echo "working on ${fasta}"
+  /Users/kriemo/anaconda2/bin/weblogo \
+    -f $fasta \
+    -D fasta \
+    -c classic \
+    -o ${fasta/.fasta/.png} \
+    -F png_print \
+    -A rna \
+    -U probability \
+    -s large \
+    -t ${fasta/.fasta} \
+    -P  " "
+done
+```
+
+
+
+```{r, cache = F}
+pngs <- dir("hyperedits/motifs", pattern = "*.png", full.names = T)
+```
+
+```{r, results='asis', cache = F}
+# programatically generate links to pngs
+walk(pngs, ~cat("![](", .x, ")\n"))
+```
+
+```{bash pdfs, cache = F}
+for fasta in hyperedits/motifs/radar_hg19.fasta hyperedits/motifs/radar_mm9.fasta hyperedits/motifs/bp10_hyperediting.fasta hyperedits/motifs/bp10_gatk.fasta hyperedits/motifs/bp10_both.fasta hyperedits/motifs/bp10_nonsig.fasta hyperedits/motifs/bp10_shuffled.fasta
+do echo "working on ${fasta}"
+  /Users/kriemo/anaconda2/bin/weblogo \
+    -f $fasta \
+    -D fasta \
+    -o ${fasta/.fasta/.pdf} \
+    -F pdf \
+    -A rna \
+    -c classic \
+    -U probability \
+    -s large \
+    -P  " "
+done
+```
+
+
+## Determine conservation of editing sites  
+
+  Identified RNA editing sites will be compared to known editing sites in mouse and human RADAR databases. The [RADAR database](http://rnaedit.com/about/) has rna editing sites for mouse and human. The mouse data is probably more relevant but there are fewer sites (~8000 mouse versus 2 million human). The mouse data is the mm9 assembly and there is only a squirrel to mm10 liftover, so a sequential liftover is necessary. The human data is hg19 so a liftover from mm10 to hg19 can be done.
+  
+  Additionallly there is a database of editings sites conserved across mammals (human, mouse, rat, cow, opossum, and platypus data) taken from a [paper](https://doi.org/10.1186/gb-2014-15-1-r5) from Erez Levanon's lab
+
+```{r dat}
+genome <- read_genome(file.path(db_dir, "ensembl85/chrom_sizes.txt"))
+fasta <-  path.expand(file.path(db_dir, "ensembl85/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa"))
+
+# need to strip the ".1" suffix from the chromosomes to compare to UCSC dbs
+bed <- dplyr::mutate(edits, 
+                     score = 0.0) %>% 
+dplyr::select(chrom,
+              start, #derived from bed file, zero based
+              end,
+              site,
+              score,
+              strand, 
+              pipeline) %>% 
+  unique()
+
+bed <- mutate(bed,
+              chrom = str_replace(chrom, ".1$", ""))
+
+gatk_bed <- dplyr::filter(bed, pipeline != "Hyperediting") %>% 
+  dplyr::select(-pipeline)
+
+hyperedits_bed <- dplyr::filter(bed, pipeline != "GATK") %>% 
+  dplyr::select(-pipeline)
+
+both_bed <- dplyr::select(bed, -pipeline)
+write_bed <- function(bed, outname){
+  # prevent writing as scientifc 
+  bed <- dplyr::arrange(bed, chrom, start, end)
+  res <- mutate_if(bed, is.double, as.integer)
+  write.table(res, paste0(outname, ".bed"), 
+              quote = F, col.names = F,
+              sep = "\t",
+              row.names = F)
+}
+
+write_bed(both_bed, "hyperedits/gatk_plus_hyperedits")
+write_bed(gatk_bed, "hyperedits/gatk_only")
+write_bed(hyperedits_bed, "hyperedits/hyperedits_only")
+
+dat <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_all_sites_raw_counts.txt.gz")
+
+# make bed like file
+bed <- dplyr::select(dat, 
+              `#chrom`,
+              pos, #derived from bed file, zero based
+              edit_site) %>% 
+  unique() %>% 
+  dplyr::rename(chrom = `#chrom`,
+                site = edit_site) %>% 
+  mutate(start = pos - 1,
+         end = pos,
+         strand = ifelse(str_detect(site, "T$"),
+                                    "-",
+                                    "+"),
+         score = 0) %>% 
+  dplyr::select(chrom, 
+         start, 
+         end,
+         site,
+         score,
+         strand)
+
+# need to strip the ".1" suffix from the chromosomes to compare to UCSC dbs
+
+bed <- mutate(bed,
+              chrom = str_replace(chrom, ".1$", ""))
+
+write_bed(bed, "hyperedits/all_gatk_edits")
+
+dat <- read_tsv("hyperedits/diffedits/A_G_all_sites_raw_counts.txt.gz")
+
+# make bed like file
+bed <- dplyr::select(dat, 
+              `#chrom`,
+              pos, #derived from bed file, zero based
+              edit_site) %>% 
+  unique() %>% 
+  dplyr::rename(chrom = `#chrom`,
+                site = edit_site) %>% 
+  mutate(start = pos - 1,
+         end = pos,
+         strand = ifelse(str_detect(site, "T$"),
+                                    "-",
+                                    "+"),
+         score = 0) %>% 
+  dplyr::select(chrom, 
+         start, 
+         end,
+         site,
+         score,
+         strand)
+
+# need to strip the ".1" suffix from the chromosomes to compare to UCSC dbs
+
+bed <- mutate(bed,
+              chrom = str_replace(chrom, ".1$", ""))
+
+write_bed(bed, "hyperedits/all_hyper_edits")
+
+## lastly generate bed file for ~12,000 sites identified by both gatk and hyperediting but that were not significant
+nonsig_bed <- mutate(nonsig_bed,
+              chrom = str_replace(chrom, ".1$", ""))
+write_bed(nonsig_bed, "hyperedits/all_nonsig_edits")
+```
+
+### get editing sites from RADAR db and liftOver chains
+
+```{r}
+
+if(!file.exists("hyperedits/mm10ToMm9.over.chain.gz")){
+  download.file("http://hgdownload.soe.ucsc.edu/goldenPath/mm10/liftOver/mm10ToMm9.over.chain.gz", 
+              "hyperedits/mm10ToMm9.over.chain.gz")
+}
+
+
+if(!file.exists("hyperedits/speTri2ToMm10.over.chain.gz")){
+  download.file("http://hgdownload.soe.ucsc.edu/goldenPath/speTri2/liftOver/speTri2ToMm10.over.chain.gz", 
+              "hyperedits/speTri2ToMm10.over.chain.gz")
+}
+
+
+if(!file.exists("hyperedits/mm10ToHg19.over.chain.gz")){
+  download.file("http://hgdownload.soe.ucsc.edu/goldenPath/mm10/liftOver/mm10ToHg19.over.chain.gz", 
+              "hyperedits/mm10ToHg19.over.chain.gz")
+}
+
+if(!file.exists("hyperedits/Mouse_AG_all_mm9_v2.txt.gz")){
+  download.file("http://lilab.stanford.edu/GokulR/database/Mouse_AG_all_mm9_v2.txt", 
+              "hyperedits/Mouse_AG_all_mm9_v2.txt")
+  R.utils::gzip("hyperedits/Mouse_AG_all_mm9_v2.txt", remove = T, overwrite = T)
+}
+
+if(!file.exists("hyperedits/Human_AG_all_hg19_v2.txt.gz")){
+  download.file("http://lilab.stanford.edu/GokulR/database/Human_AG_all_hg19_v2.txt", 
+              "hyperedits/Human_AG_all_hg19_v2.txt")
+  R.utils::gzip("hyperedits/Human_AG_all_hg19_v2.txt", remove = T, overwrite = T)
+}
+
+
+#Mammalian conserved ADAR targets comprise only a small fragment of the human editosome
+#Yishay Pinto, Haim Y Cohen and Erez Y Levanon
+#supplement 1
+
+url <- "https://static-content.springer.com/esm/art%3A10.1186%2Fgb-2014-15-1-r5/MediaObjects/13059_2013_3196_MOESM1_ESM.xlsx"
+base_file <- basename(url)
+base_file <- file.path("hyperedits/", base_file)
+
+if(!file.exists(base_file)){
+  download.file(url, base_file)
+}
+```
+
+```{bash}
+# run sequential liftovers to generate comparable assemblies
+lo="$HOME/bin/kent/liftOver"
+dir="hyperedits/"
+$lo $dir/gatk_plus_hyperedits.bed $dir/speTri2ToMm10.over.chain.gz $dir/mm10_edits.txt un.txt
+$lo $dir/mm10_edits.txt $dir/mm10Tohg19.over.chain.gz $dir/hg19_edits.txt un3.txt
+$lo $dir/mm10_edits.txt $dir/mm10ToMm9.over.chain.gz $dir/mm9_edits.txt un2.txt
+
+$lo $dir/all_gatk_edits.bed $dir/speTri2ToMm10.over.chain.gz $dir/mm10_alledits.txt un.txt
+$lo $dir/mm10_alledits.txt $dir/mm10Tohg19.over.chain.gz $dir/hg19_allgatkedits.txt un3.txt
+$lo $dir/mm10_alledits.txt $dir/mm10ToMm9.over.chain.gz $dir/mm9_allgatkedits.txt un2.txt
+
+$lo $dir/all_hyper_edits.bed $dir/speTri2ToMm10.over.chain.gz $dir/mm10_alledits.txt un.txt
+$lo $dir/mm10_alledits.txt $dir/mm10Tohg19.over.chain.gz $dir/hg19_allhyperedits.txt un3.txt
+$lo $dir/mm10_alledits.txt $dir/mm10ToMm9.over.chain.gz $dir/mm9_allhyperedits.txt un2.txt
+
+$lo $dir/all_nonsig_edits.bed $dir/speTri2ToMm10.over.chain.gz $dir/mm10_alledits.txt un.txt
+$lo $dir/mm10_alledits.txt $dir/mm10Tohg19.over.chain.gz $dir/hg19_allnonsigedits.txt un3.txt
+$lo $dir/mm10_alledits.txt $dir/mm10ToMm9.over.chain.gz $dir/mm9_allnonsigedits.txt un2.txt
+
+rm un.txt un3.txt un2.txt
+```
+
+```{r}
+radar_mm9 <- read_tsv("hyperedits/Mouse_AG_all_mm9_v2.txt.gz")
+
+# convert to zero based and make bed-like
+
+radar_mm9 <- dplyr::rename(radar_mm9, 
+                chrom = chromosome,
+                start = position) %>% 
+  mutate(end = start,
+         start = start - 1) %>% 
+  dplyr::select(chrom, start, end, gene, annot1, strand, everything())
+```
+
+```{r}
+radar_hg19 <- read_tsv("hyperedits/Human_AG_all_hg19_v2.txt.gz")
+
+# convert to zero based and make bed-like
+
+radar_hg19 <- dplyr::rename(radar_hg19, 
+                chrom = chromosome,
+                start = position) %>% 
+  mutate(end = start,
+         start = start - 1) %>% 
+  dplyr::select(chrom, start, end, gene, annot1, strand, everything())
+```
+
+```{r}
+# read in liftedover squirrel edits
+
+mm9_edits <- read_tsv("hyperedits/mm9_edits.txt", 
+                  col_names = c("chrom", "start", "end",
+                                "site", "score", "strand"))
+
+hg19_edits <- read_tsv("hyperedits/hg19_edits.txt", 
+                  col_names = c("chrom", "start", "end",
+                                "site", "score", "strand"))
+
+shared_mouse_sig_edits <- bed_intersect(radar_mm9, mm9_edits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+
+shared_human_sig_edits <- bed_intersect(radar_hg19, hg19_edits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+```
+
+### Conserved Mammalian edits
+```{r}
+conserved <- readxl::read_excel("hyperedits/13059_2013_3196_MOESM1_ESM.xlsx")
+conserved <- dplyr::select(conserved, 
+                    `human, hg19`, X__3,
+                    X__4, gene, region) %>% 
+  unique() %>% 
+  dplyr::rename(chrom = `human, hg19`,
+                start = X__3,
+                end = X__4)
+
+
+shared_mammal_sig_edits <- bed_intersect(conserved, hg19_edits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+```
+
+```{r hyper_edits}
+mm9_allhyperedits <- read_tsv("hyperedits/mm9_allhyperedits.txt", 
+                  col_names = c("chrom", "start", "end",
+                                "site", "score", "strand"))
+
+hg19_allhyperedits <- read_tsv("hyperedits/hg19_allhyperedits.txt", 
+                  col_names = c("chrom", "start", "end",
+                                "site", "score", "strand"))
+
+shared_mouse_all_hyperedits <- bed_intersect(radar_mm9, mm9_allhyperedits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+shared_human_all_hyperedits <- bed_intersect(radar_hg19, hg19_allhyperedits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+
+
+shared_mammal_all_hyperedits <- bed_intersect(conserved, hg19_allhyperedits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+
+anti_join(conserved, shared_mammal_all_hyperedits, 
+           by = c("chrom", "start", "end")) -> conserved_sites_not_found_hyper
+```
+
+
+```{r gatk_editing}
+mm9_allgatkedits <- read_tsv("hyperedits/mm9_allgatkedits.txt", 
+                  col_names = c("chrom", "start", "end",
+                                "site", "score", "strand"))
+
+hg19_allgatkedits <- read_tsv("hyperedits/hg19_allgatkedits.txt", 
+                  col_names = c("chrom", "start", "end",
+                                "site", "score", "strand"))
+
+shared_mouse_all_gatkedits <- bed_intersect(radar_mm9, mm9_allgatkedits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+shared_human_all_gatkedits <- bed_intersect(radar_hg19, hg19_allgatkedits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+
+
+shared_mammal_all_gatkedits <- bed_intersect(conserved, hg19_allgatkedits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+
+anti_join(conserved, shared_mammal_all_gatkedits, 
+           by = c("chrom", "start", "end")) -> conserved_sites_not_found
+```
+
+
+```{r not_sig_edits}
+mm9_allnonsigedits <- read_tsv("hyperedits/mm9_allnonsigedits.txt", 
+                  col_names = c("chrom", "start", "end",
+                                "site", "score", "strand"))
+
+hg19_allnonsigedits <- read_tsv("hyperedits/hg19_allnonsigedits.txt", 
+                  col_names = c("chrom", "start", "end",
+                                "site", "score", "strand"))
+
+shared_mouse_all_nonsigedits <- bed_intersect(radar_mm9, 
+                                             mm9_allnonsigedits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+shared_human_all_nonsigedits <- bed_intersect(radar_hg19, 
+                                              hg19_allnonsigedits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+
+
+shared_mammal_all_nonsigedits <- bed_intersect(conserved, 
+                                              hg19_allnonsigedits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+
+anti_join(conserved, shared_mammal_all_nonsigedits, 
+           by = c("chrom", "start", "end")) -> conserved_sites_not_found_nonsig
+```
+## editing sites conserved {.tabset}
+
+### All edits found in mouse 
+```{r}
+bind_rows(shared_mouse_all_gatkedits,
+  shared_mouse_all_hyperedits) %>% unique() -> shared_mouse_all_edits
+shared_mouse_all_edits
+```
+
+### All edits found in humans
+```{r}
+bind_rows(shared_human_all_gatkedits,
+  shared_human_all_hyperedits) %>% unique() -> shared_human_all_edits
+shared_human_all_edits
+```
+
+### Significant edits found in mouse
+```{r}
+shared_mouse_sig_edits
+```
+
+### Significant edits found in humans
+```{r}
+shared_human_sig_edits
+```
+
+### Conserved mammalian sites significant
+```{r}
+shared_mammal_sig_edits
+```
+
+### Conserved mammalian sites all
+```{r}
+bind_rows(shared_mammal_all_gatkedits,
+          shared_mammal_all_hyperedits) %>%  unique() -> shared_mammal_all_edits
+
+shared_mammal_all_edits
+```
+
+### Conserved mammalian sites not found
+```{r}
+conserved_sites_not_found
+```
+
+### write to txt
+
+```{r write_out_conserved_edits}
+
+edits <- list(
+  shared_mouse_all_edits,
+  shared_human_all_edits,
+  shared_mouse_sig_edits,
+  shared_human_sig_edits,
+  shared_mammal_sig_edits,
+  shared_mammal_all_edits,
+  conserved_sites_not_found
+)
+names(edits) <- c(
+  "shared_mouse_all_edits",
+  "shared_human_all_edits",
+  "shared_mouse_sig_edits",
+  "shared_human_sig_edits",
+  "shared_mammal_sig_edits",
+  "shared_mammal_all_edits",
+  "conserved_sites_not_found"
+)
+map2(edits, 
+     names(edits),
+     ~write_tsv(.x, paste0("hyperedits/", .y, ".txt")))
+
+```
+
+### write to xcel workbook
+
+```{r}
+edits <- map(edits, 
+             ~.x %>% 
+               dplyr::filter(!is.na(chrom)))
+
+replace_col_names <- function(df, new_suffix, old_suffix = ".x$"){
+  .cols <- colnames(df)
+  new_cols <- str_replace(.cols, old_suffix, new_suffix)
+  colnames(df) <- new_cols
+  df
+}
+
+# make sensible column names
+edits$shared_mouse_all_edits <- replace_col_names(edits$shared_mouse_all_edits,
+                                                  ".mm9radar")
+edits$shared_human_all_edits <- replace_col_names(edits$shared_human_all_edits,
+                                                  ".hg19radar")
+edits$shared_mouse_sig_edits <- replace_col_names(edits$shared_mouse_sig_edits,
+                                                  ".mm9radar")
+edits$shared_human_sig_edits <- replace_col_names(edits$shared_human_sig_edits,
+                                                  ".hg19radar")
+edits$shared_mammal_sig_edits <- replace_col_names(edits$shared_mammal_sig_edits,
+                                                  ".hg19conserved")
+edits$shared_mammal_all_edits <- replace_col_names(edits$shared_mammal_all_edits,
+                                                  ".hg19conserved")
+edits <- map(edits,
+             ~replace_col_names(.x, 
+                               new_suffix = ".squirrel",
+                               old_suffix = ".y$"))
+
+
+legend <- data_frame(
+  Sheet =   c("Squirrel-edits-in-mm9",
+  "Squirrel-edits-in-hg19",
+  "Squirrel-torpor-edits-in-mm9",
+  "Squirrel-torpor-edits-in-hg19",
+  "Squirrel-torpor-edits-conserved",
+  "Squirrel-edits-conserved"),
+  Description = c(
+    "All squirrel editing sites found in mouse (mm9) RADAR database",
+    "All squirrel editing sites found in human (hg19) RADAR database",
+    "Cold-Enriched squirrel editing sites found in mouse (mm9) RADAR database",
+    "Cold-Enriched squirrel editing sites found in mouse (mm9) RADAR database",
+    "Cold-Enriched editing sites conserved across 6 mammals (Pinto, Y., Cohen, H. Y., & Levanon, E. Y. (2014). Mammalian conserved ADAR targets comprise only a small fragment of the human editosome. Genome Biology, 15, R5. https://doi.org/10.1186/gb-2014-15-1-r5)",
+    "All squirrel editing sites conserved across 6 mammals (Pinto, Y., Cohen, H. Y., & Levanon, E. Y. (2014). Mammalian conserved ADAR targets comprise only a small fragment of the human editosome. Genome Biology, 15, R5. https://doi.org/10.1186/gb-2014-15-1-r5)"
+  )
+)
+# new list names which will become sheets
+
+new_names <- c(
+  "Legend",
+  "Squirrel-edits-in-mm9",
+  "Squirrel-edits-in-hg19",
+  "Squirrel-torpor-edits-in-mm9",
+  "Squirrel-torpor-edits-in-hg19",
+  "Squirrel-torpor-edits-conserved",
+  "Squirrel-edits-conserved"
+)
+edits <- append(list(legend), edits)
+names(edits) <- new_names
+# set geneid and gene_name cols to Text to avoid renaming to dates
+# don't keep conserved sites not found in squirrel edits
+edits[2:7] <- map2(edits[2:7],
+                  c("gene.mm9radar",
+                    "gene.hg19radar",
+                    "gene.mm9radar",
+                    "gene.hg19radar",
+                    "gene.hg19conserved",
+                    "gene.hg19conserved"),
+    ~set_xlsx_class(.x, 
+                    .y, 
+                    "Text"))
+
+#edits[7] <- map(edits[7],
+#    ~set_xlsx_class(.x, 
+#                    "gene", 
+#                    "Text"))
+
+openxlsx::write.xlsx(edits[1:7], "hyperedits/editing_site_conservation.xlsx")
+
+openxlsx::write.xlsx(edits[1:7], "hyperedits/Supplemental-Table-1.xlsx")
+```
+
+
+## Heatmap of conserved (found in mouse or human) sites
+
+```{r, conserved_sites, fig.width = 6, fig.height = 8}
+
+mouse_sig <- read_tsv("hyperedits/shared_mouse_sig_edits.txt")
+human_sig <- read_tsv("hyperedits/shared_human_sig_edits.txt")
+
+# might be useful to write these out to a table also with FDR values
+
+mouse_sig %>% dplyr::select(gene.x, site.y, annot2.x) -> sig_conserved
+bind_rows(sig_conserved, 
+          human_sig %>% 
+            dplyr::select(gene.x, site.y, annot2.x)) -> sig_conserved
+
+dplyr::mutate(sig_conserved, gene.x = str_to_upper(gene.x)) %>% 
+  unique() %>% 
+  arrange(gene.x) %>% 
+  mutate(gene_effect_ids = paste0(gene.x, "::", annot2.x)) -> sig_conserved
+
+# make unique names for each site
+sig_conserved %>% 
+  group_by(gene_effect_ids) %>% 
+  mutate(n = n(), 
+         row_id = row_number(), 
+         gene_effect_ids_unique = ifelse(n > 1, 
+                                         paste0(gene_effect_ids, "::site", row_id), 
+                                         gene_effect_ids)) -> sig_conserved
+
+sig_conserved_sites <- dplyr::pull(sig_conserved, site.y)
+names(sig_conserved_sites) <- dplyr::pull(sig_conserved, gene_effect_ids_unique)
+
+
+dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand", 
+                             "A_G_alleles", "A_G_filtered_sites_proportions.txt.gz"))
+dat <- as.data.frame(dat)
+rownames(dat) <- dat[, 1]
+dat <- dat[, -1]
+
+fmat_validation <- dat[rownames(dat) %in% sig_conserved_sites, ]
+
+fmat_validation <- fmat_validation * 100
+
+# rename rows to gene names with potential impact of site
+row_geneids <- names(sig_conserved_sites[match(rownames(fmat_validation), 
+                                                    sig_conserved_sites)])
+rownames(fmat_validation) <- row_geneids
+
+#format intergenic sites to just say intergenic
+rownames(fmat_validation) <- str_replace(rownames(fmat_validation),
+             "INTERGENIC::intergenic",
+             "INTERGENIC")
+
+g_names <- colnames(fmat_validation)
+animal_number <- str_extract(g_names, "[MHB][0-9]+")
+  
+ # allele_type <- rep(c("A", "G"), each = 30)
+groups <- data_frame(g_names, animal_number)
+
+  pdata <- readr::read_tsv(file.path(docs_dir, "BrainRegionRNAseqLibMetadata.txt"))
+  pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+  pdata <- mutate(pdata, 
+                  animal_number = str_split(sample, "_", simplify = T)[, 1])
+  pdata <- mutate(pdata,
+                region = ifelse(region == "Forebrain",
+                                "Cerebrum",
+                                region))
+  
+pdata <- inner_join(groups, 
+                      pdata, 
+                      by = c("animal_number")) %>%
+    dplyr::select(g_names, animal_number, State, region)
+
+pdata_heatmap <- data_frame( "names" = colnames(fmat_validation)) %>%
+      inner_join(., pdata, by = c("names" = "g_names")) %>%
+      dplyr::select(names, State, region) %>% as.data.frame() %>% 
+      arrange(State)
+
+reordered_cols <- pdata_heatmap$names %>% unlist()
+
+fmat_validation <- fmat_validation[, reordered_cols]
+
+ha2 <- HeatmapAnnotation(df = as.data.frame(pdata_heatmap[c('State', 'region')]), 
+                                      col = list(
+                                        "region" = region_cols,
+                                          "State" = state_cols
+                                                 ),
+                           annotation_legend_param = list(
+                             State = list(title = "Sampling Group",
+                                          at = state_order, 
+                                          labels = state_order, nrow = 1),
+                             region = list(title = "Brain Region", nrow = 3)), 
+                             gap = unit(3, "mm"),
+                            show_annotation_name = TRUE,
+                            annotation_name_side = "left",
+                            annotation_name_offset = unit(1, "mm"))
+
+
+ht <- Heatmap(fmat_validation,
+          show_row_names = T,
+          show_column_names = FALSE,
+          cluster_rows = T,
+          show_row_dend = F,
+          cluster_columns = T,
+         # column_order = col_names_for_hmap,
+          top_annotation = ha2,
+          heatmap_legend_param = list(
+            title = "Percent\nEditing (%)")
+         )
+
+draw(ht, annotation_legend_side = "top", heatmap_legend_side = "left")
+
+pdf("hyperedits/heatmap_for_conserved_sites.pdf")
+draw(ht, annotation_legend_side = "top", heatmap_legend_side = "left")
+dev.off()
+
+#fig 3b
+file.copy("hyperedits/heatmap_for_conserved_sites.pdf",
+          figs_dir[2], overwrite = T)
+```
+  
+

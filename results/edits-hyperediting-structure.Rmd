@@ -1,0 +1,942 @@
+---
+title: "edits-hyperediting-structure"
+author: "Kent Riemondy RBI"
+date: "10/16/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+## Examine RNA structure of editing site
+
+```{r ,message=FALSE, warning=FALSE}
+source("globals.R")
+```
+
+```{r read_in_dat}
+genome <- read_genome(file.path(db_dir, "ensembl85/chrom_sizes.txt"))
+fasta <-  path.expand(file.path(db_dir, "ensembl85/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa"))
+
+dat <- read.table("edits/A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz",
+                header = T,
+                sep = "\t", 
+                stringsAsFactors = F) %>% 
+  as_data_frame()
+
+dat <- dplyr::filter(dat, 
+                       kmeans_cluster == 1)
+                     
+hyper <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation_kmeans.txt.gz")
+hyper <- dplyr::filter(hyper, 
+                       FDR < 0.01,
+                       kmeans_cluster != 3)
+
+edits <- list(dat, hyper)
+names(edits) <- c("GATK", "Hyperediting")
+edits <- bind_rows(edits, .id = "pipeline")
+
+# annotate if found in both
+
+edits %>% 
+  dplyr::select(chrom, start, strand, pipeline) %>% 
+  unique() %>% 
+  dplyr::group_by(chrom, start, strand) %>% 
+  mutate(sites = n(),
+         pipeline = ifelse(sites > 1,
+                           "both",
+                           pipeline)) %>% 
+  ungroup() -> pipeline_used
+
+edits <- left_join(edits, pipeline_used,
+                   by = c("chrom", "start", "strand")) %>% 
+  mutate(pipeline = ifelse(pipeline.y == "both",
+                           "both",
+                           pipeline.x)) %>% 
+  dplyr::select(-sites, -pipeline.x, -pipeline.y) %>% 
+  unique()
+
+# make bed like file
+bed <- dplyr::select(edits, 
+              chrom,
+              start, #derived from bed file, zero based
+              end,
+              site,
+              kmeans_cluster, 
+              strand,
+              pipeline) %>% unique()
+
+# drop editing sites near ends of chroms
+trimmed_bed <- bed_slop(bed, both = 2000, genome, trim = F)
+
+# only keep intervals still present in trimmed bed
+bed <- bed %>% 
+  filter(site %in% trimmed_bed$site)
+
+bed <- ungroup(bed) %>% 
+  dplyr::select(-kmeans_cluster,
+                -pipeline) %>% 
+  unique()
+
+# +/- 100 nt
+slop_bed <- bed_slop(bed, 
+                     both = 100, 
+                     genome, 
+                     strand = TRUE)
+
+nsites <- nrow(slop_bed)
+names(nsites) <- "sig_sites"
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+
+dir.create("hyperedits/folding/", recursive = T)
+kentr::write_fasta(seqs, "hyperedits/folding/bp100.fasta")
+
+rv_seqs <- mutate(seqs, seq = kentr::revComp(seq))
+kentr::write_fasta(rv_seqs, "hyperedits/folding/bp100_revcomp.fasta")
+
+
+
+## make regions to search (+/- 20kbp)
+slop_bed <- bed_slop(bed, both = 2000, 
+                     genome,
+                     strand = TRUE)
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+kentr::write_fasta(seqs, "hyperedits/folding/bp2000.fasta")
+
+rv_seqs <- mutate(seqs, seq = kentr::revComp(seq))
+kentr::write_fasta(rv_seqs, "hyperedits/folding/bp2000_revcomp.fasta")
+```
+
+
+```{r}
+## also generate a set of intervals from non-significant sites
+
+hyper_edits_non_sig <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation_kmeans.txt.gz")
+hyper_edits_non_sig <- hyper_edits_non_sig %>% 
+  dplyr::filter(FDR > 0.5) %>% 
+  dplyr::select(chrom, start, end, strand, site, strand) %>% 
+  unique()
+
+# exclude sites that are significant (in significant list due to being significant in at least 1 brain region)
+hyper_edits_non_sig <- anti_join(hyper_edits_non_sig,
+                               edits, 
+                               by = "site")
+
+gatk_non_sigsites <- read_tsv("edits/A_G_filtered_notsignificant_sites_annotation_kmeans.txt.gz")
+gatk_non_sigsites <- gatk_non_sigsites %>%
+  dplyr::filter(FDR > 0.5) %>% 
+  dplyr::select(chrom, start, end, strand, site, strand) %>% 
+  unique()
+
+gatk_non_sigsites <- anti_join(gatk_non_sigsites,
+                               edits, 
+                               by = "site")
+
+shared_sites <- semi_join(hyper_edits_non_sig, gatk_non_sigsites, 
+                           by = c("site"))
+
+# make bed like file
+nonsig_bed <- dplyr::mutate(shared_sites, score = 0) %>% 
+              dplyr::select( chrom,
+              start,
+              end,
+              site,
+              score,
+              strand) %>% 
+  unique()
+
+# drop editing sites near ends of chroms
+trimmed_nonsig_bed <- bed_slop(nonsig_bed, 
+                               both = 2000, genome, trim = F)
+
+# only keep intervals still present in trimmed bed
+nonsig_bed <- nonsig_bed %>% 
+  filter(site %in% trimmed_nonsig_bed$site) %>% 
+  unique()
+
+nonsig_bed <- ungroup(nonsig_bed)
+
+slop_bed <- bed_slop(nonsig_bed, both = 100, genome, 
+                     strand = TRUE)
+
+nsites <- c(nsites, nrow(slop_bed))
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+kentr::write_fasta(seqs, "hyperedits/folding/bp100_nonsig.fasta")
+
+rv_seqs <- mutate(seqs, seq = kentr::revComp(seq))
+kentr::write_fasta(rv_seqs, "hyperedits/folding/bp100_nonsig_revcomp.fasta")
+
+## make regions to search (+/- 3kbp)
+slop_bed <- bed_slop(nonsig_bed, both = 2000, genome,
+                     strand = TRUE)
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+kentr::write_fasta(seqs, "hyperedits/folding/bp2000_nonsig.fasta")
+
+rv_seqs <- mutate(seqs, seq = kentr::revComp(seq))
+kentr::write_fasta(rv_seqs, "hyperedits/folding/bp2000_nonsig_revcomp.fasta")
+
+```
+
+```{r read_in_conserved_sites, eval = F}
+mouse <- read_tsv("hyperedits/shared_mouse_all_edits.txt")
+human <- read_tsv("hyperedits/shared_human_all_edits.txt")
+
+con_edits <- list(mouse, human)
+con_edits <- map(con_edits, ~dplyr::select(.x, site.y)) # parse out original squirrel intervals from site.y col
+con_edits <- map(con_edits, ~tidyr::separate(.x, 
+                                             site.y,
+                                             c("chrom", "start", "name"),
+                                             sep = "::",
+                                             remove = F))
+con_edits <- map(con_edits, ~mutate(.x, 
+                                    start = as.numeric(start),
+                                    end  = start,
+                                    start = start - 1,
+                                    strand = ifelse(name == "A",
+                                                    "+",
+                                                    "-"),
+                                    site = site.y))
+
+con_edits <- bind_rows(con_edits)
+con_edits <- unique(con_edits)
+
+# drop editing sites near ends of chroms
+trimmed_bed <- bed_slop(con_edits, both = 2000, genome, trim = F)
+
+# only keep intervals still present in trimmed bed
+bed <- con_edits %>% filter(site %in% trimmed_bed$site)
+
+bed <- ungroup(bed)
+# +/- 100 nt
+slop_bed <- bed_slop(bed, both = 100, genome, 
+                     strand = TRUE)
+# trim slopped coords if past transcript
+slop_bed <- mutate(slop_bed, 
+                   start = ifelse(tx_start > start,
+                                  tx_start, 
+                                  start), 
+                   end = ifelse(tx_end < end,
+                                tx_end,
+                                end))
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+
+dir.create("edits/folding/", recursive = T)
+kentr::write_fasta(seqs, "hyperedits/folding/conserved_sites_bp100.fasta")
+
+rv_seqs <- mutate(seqs, seq = kentr::revComp(seq))
+kentr::write_fasta(rv_seqs, "hyperedits/folding/conserved_sites_bp100_revcomp.fasta")
+
+
+
+## make regions to search (+/- 20kbp)
+slop_bed <- bed_slop(bed, both = 2000, 
+                     genome,
+                     strand = TRUE)
+
+# trim slopped coords if past transcript
+slop_bed <- mutate(slop_bed, 
+                   start = ifelse(tx_start > start,
+                                  tx_start, 
+                                  start), 
+                   end = ifelse(tx_end < end,
+                                tx_end,
+                                end))
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+kentr::write_fasta(seqs, "hyperedits/folding/conserved_sites_bp2000.fasta")
+```
+
+
+```{r read_shuffled_sites}
+# sites generated by edits-hyperediting-conservation
+
+shuf_edits <- read_tsv("hyperedits/shuffled_editing_sites.bed")
+
+# drop editing sites near ends of chroms
+trimmed_bed <- bed_slop(shuf_edits, 
+                        both = 2000, 
+                        genome, 
+                        trim = F)
+
+# only keep intervals still present in trimmed bed
+bed <- shuf_edits %>% 
+  filter(site.x %in% trimmed_bed$site.x)
+
+bed <- ungroup(bed)
+# +/- 100 nt
+slop_bed <- bed_slop(bed, both = 100, genome, 
+                     strand = TRUE)
+
+nsites <- c(nsites, nrow(slop_bed))
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site.x, header, 
+                                    sep = ":::"))
+
+dir.create("hyperedits/folding/", recursive = T)
+kentr::write_fasta(seqs, "hyperedits/folding/bp100_shuf.fasta")
+
+rv_seqs <- mutate(seqs, seq = kentr::revComp(seq))
+kentr::write_fasta(rv_seqs, "hyperedits/folding/bp100_shuf_revcomp.fasta")
+
+## make regions to search (+/- 2kbp)
+slop_bed <- bed_slop(bed, both = 2000, 
+                     genome,
+                     strand = TRUE)
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site.x, header, 
+                                    sep = ":::"))
+kentr::write_fasta(seqs, "hyperedits/folding/bp2000_shuf.fasta")
+
+rv_seqs <- mutate(seqs, seq = kentr::revComp(seq))
+kentr::write_fasta(rv_seqs, "hyperedits/folding/bp2000_shuf_revcomp.fasta")
+
+```
+
+## run blastn
+```{bash, eval = F}
+
+function run_blastn {
+  rm tmp1.txt tmp2.txt $3 blastout.log.txt
+  nq=$(grep -c "^>" $1)
+  nr=$(grep -c "^>" $2)
+  
+  # check that the two fasta are the same length
+  if [ "$nq" != "$nr" ]; then
+    echo "fasta lengths are not the same"
+    exit 1
+  fi
+  
+  # iterate by twos and make single record fastas for pairwise blast
+  for ((i = 1; i <= $nq; i += 2))
+  do 
+    if [ $(( $i % 49 )) -eq 0 ]
+      then echo $i" records processed" >> blastout.log.txt 
+    fi
+    second=$(( $i + 1 ))
+    sed -n $i","$second"p" $1 > tmp1.txt
+    sed -n $i","$second"p" $2 > tmp2.txt
+    blastn -strand "plus" \
+      -word_size 7 \
+      -evalue "0.1" \
+      -outfmt 6 \
+      -query tmp1.txt \
+      -subject tmp2.txt >> $3
+  done
+  # word_size default in blastn via web 
+  # evalue 0.1 used by Jin Billy Li in Li et al., Science 2009
+  rm tmp1.txt tmp2.txt 
+}
+
+run_blastn hyperedits/folding/bp100_revcomp.fasta \
+  hyperedits/folding/bp2000.fasta \
+  hyperedits/folding/blast_sig_sites_2000nt.txt
+ 
+run_blastn hyperedits/folding/bp100.fasta \
+  hyperedits/folding/bp2000.fasta \
+  hyperedits/folding/blast_sig_revcomp_sites_2000nt.txt
+  
+run_blastn hyperedits/folding/bp100_nonsig_revcomp.fasta \
+  hyperedits/folding/bp2000_nonsig.fasta \
+  hyperedits/folding/blast_nonsig_sites_2000nt.txt
+  
+run_blastn hyperedits/folding/bp100_nonsig.fasta \
+  hyperedits/folding/bp2000_nonsig.fasta \
+  hyperedits/folding/blast_nonsig_revcomp_sites_2000nt.txt
+  
+run_blastn hyperedits/folding/bp100_shuf_revcomp.fasta \
+  hyperedits/folding/bp2000_shuf.fasta \
+  hyperedits/folding/blast_shuf_sites_2000nt.txt
+  
+run_blastn hyperedits/folding/bp100_shuf.fasta \
+  hyperedits/folding/bp2000_shuf.fasta \
+  hyperedits/folding/blast_shuf_revcomp_sites_2000nt.txt
+  
+```
+
+## plot distribution
+```{r}
+blast_res <- read_tsv("hyperedits/folding/blast_nonsig_sites_2000nt.txt",
+                      col_names = F)
+
+blast_res <- mutate(blast_res, 
+                    edit_pos = str_match(blast_res$X1, "::(\\d+)::")[, 2] %>% as.integer(),
+                    start = str_match(blast_res$X1, ":(\\d+)-")[, 2] %>% as.integer(),
+                    end = str_match(blast_res$X1, "-(\\d+)")[, 2] %>% as.integer(),
+                    rel_edit_pos = edit_pos - start - 1)
+
+overlapped <- filter(blast_res,
+                     X7 <= rel_edit_pos, 
+                     X8 >= rel_edit_pos)
+
+long <- filter(overlapped,
+               X4 >= 20)
+length(unique(long$X1))
+
+nonsig <- length(unique(long$X1))
+nonsig
+```
+
+```{r}
+blast_res <- read_tsv("hyperedits/folding/blast_sig_sites_2000nt.txt", col_names = F)
+blast_res <- mutate(blast_res, 
+                    edit_pos = str_match(blast_res$X1, "::(\\d+)::")[, 2] %>% as.integer(),
+                    start = str_match(blast_res$X1, ":(\\d+)-")[, 2] %>% as.integer(),
+                    end = str_match(blast_res$X1, "-(\\d+)")[, 2] %>% as.integer(),
+                    rel_edit_pos = edit_pos - start - 1)
+
+overlapped <- filter(blast_res,
+                     X7 <= rel_edit_pos, 
+                     X8 >= rel_edit_pos)
+
+long <- filter(overlapped,
+               X4 >= 20)
+sig <- length(unique(long$X1))
+sig
+```
+
+```{r}
+blast_res <- read_tsv("hyperedits/folding/blast_sig_revcomp_sites_2000nt.txt", col_names = F)
+blast_res <- mutate(blast_res, 
+                    edit_pos = str_match(blast_res$X1, "::(\\d+)::")[, 2] %>% as.integer(),
+                    start = str_match(blast_res$X1, ":(\\d+)-")[, 2] %>% as.integer(),
+                    end = str_match(blast_res$X1, "-(\\d+)")[, 2] %>% as.integer(),
+                    rel_edit_pos = edit_pos - start - 1)
+
+overlapped <- filter(blast_res,
+                     X7 <= rel_edit_pos, 
+                     X8 >= rel_edit_pos)
+
+long <- filter(overlapped,
+               X4 >= 20)
+long <- filter(long, 
+               X7 != 1,
+               X8 != 201)
+length(unique(long$X1))
+
+rev_comp_sig <- length(unique(long$X1))
+rev_comp_sig
+
+```
+
+```{r}
+blast_res <- read_tsv("hyperedits/folding/blast_nonsig_revcomp_sites_2000nt.txt", col_names = F)
+blast_res <- mutate(blast_res, 
+                    edit_pos = str_match(blast_res$X1, "::(\\d+)::")[, 2] %>% as.integer(),
+                    start = str_match(blast_res$X1, ":(\\d+)-")[, 2] %>% as.integer(),
+                    end = str_match(blast_res$X1, "-(\\d+)")[, 2] %>% as.integer(),
+                    rel_edit_pos = edit_pos - start - 1)
+
+overlapped <- filter(blast_res,
+                     X7 <= rel_edit_pos, 
+                     X8 >= rel_edit_pos)
+
+long <- filter(overlapped,
+               X4 >= 20)
+long <- filter(long, 
+               X7 != 1,
+               X8 != 201)
+length(unique(long$X1))
+
+rev_comp_nonsig <- length(unique(long$X1))
+rev_comp_nonsig
+
+```
+
+```{r}
+blast_res <- read_tsv("hyperedits/folding/blast_shuf_sites_2000nt.txt", col_names = F)
+blast_res <- mutate(blast_res, 
+                    edit_pos = str_match(blast_res$X1, "::(\\d+)::")[, 2] %>% as.integer(),
+                    start = str_match(blast_res$X1, ":(\\d+)-")[, 2] %>% as.integer(),
+                    end = str_match(blast_res$X1, "-(\\d+)")[, 2] %>% as.integer(),
+                    rel_edit_pos = edit_pos - start - 1)
+
+overlapped <- filter(blast_res,
+                     X7 <= rel_edit_pos, 
+                     X8 >= rel_edit_pos)
+
+long <- filter(overlapped,
+               X4 >= 20)
+length(unique(long$X1))
+
+shuf <- length(unique(long$X1))
+shuf
+
+```
+
+```{r}
+blast_res <- read_tsv("hyperedits/folding/blast_shuf_revcomp_sites_2000nt.txt", col_names = F)
+blast_res <- mutate(blast_res, 
+                    edit_pos = str_match(blast_res$X1, "::(\\d+)::")[, 2] %>% as.integer(),
+                    start = str_match(blast_res$X1, ":(\\d+)-")[, 2] %>% as.integer(),
+                    end = str_match(blast_res$X1, "-(\\d+)")[, 2] %>% as.integer(),
+                    rel_edit_pos = edit_pos - start - 1)
+
+overlapped <- filter(blast_res,
+                     X7 <= rel_edit_pos, 
+                     X8 >= rel_edit_pos)
+
+long <- filter(overlapped,
+               X4 >= 20)
+long <- filter(long, 
+               X7 != 1,
+               X8 != 201)
+length(unique(long$X1))
+
+rev_comp_shuf <- length(unique(long$X1))
+rev_comp_shuf
+
+```
+
+```{r plot_enrichment}
+
+cnts <- c(
+  sig,
+  rev_comp_sig,
+  nonsig,
+  rev_comp_nonsig,
+  shuf,
+  rev_comp_shuf)
+
+descript <- c(
+  "cold-enriched sites    ",
+  "cold-enriched sites (-)",
+  "constitutive sites    ",
+  "constitutive sites (-)",
+  "random sites    ",
+  "random sites (-)"
+)
+
+names(nsites) <- c("sig", "nonsig", "shuf")
+
+blast_dat <- data_frame(counts = cnts,
+                        total_seqs = rep(nsites, each = 2),
+           description = factor(descript,
+                                levels = descript))
+blast_dat <- mutate(blast_dat,
+                    percent_dsRNA = 100 * (counts / total_seqs))
+
+ggplot(blast_dat, aes(description, percent_dsRNA)) +
+  geom_bar(stat = "identity") +
+  ylab("Percent of regions\nwith dsRNA character") +
+  xlab("") +
+  theme(
+    axis.text.x = element_text(angle = 90,
+                               hjust = 1, 
+                               vjust= 0.5)
+  )
+  
+ggsave("hyperedits/blastn_calc.pdf", width = 4, height = 6)
+
+blast_dat
+```
+
+## Examples of complementarity
+Find some example regions to show what regions blastn is finding as basepaired.
+
+```{bash}
+function run_blastn_with_seqs {
+  rm tmp1.txt tmp2.txt $3 blastout.log.txt
+  nq=$(grep -c "^>" $1)
+  nr=$(grep -c "^>" $2)
+  
+  # check that the two fasta are the same length
+  if [ "$nq" != "$nr" ]; then
+    echo "fasta lengths are not the same"
+    exit 1
+  fi
+  
+  # iterate by twos and make single record fastas for pairwise blast
+  for ((i = 1; i <= $nq; i += 2))
+  do 
+    if [ $(( $i % 49 )) -eq 0 ]
+      then echo $i" records processed" >> blastout.log.txt 
+    fi
+    second=$(( $i + 1 ))
+    sed -n $i","$second"p" $1 > tmp1.txt
+    sed -n $i","$second"p" $2 > tmp2.txt
+    blastn -strand "plus" \
+      -word_size 7 \
+      -evalue "0.1" \
+      -outfmt "6 qseqid sseqid pident length mismatch gapopen qstart qend sstart send evalue bitscore qseq sseq" \
+      -query tmp1.txt \
+      -subject tmp2.txt >> $3
+  done
+  # word_size default in blastn via web 
+  # evalue 0.1 used by Jin Billy Li in Li et al., Science 2009
+  rm tmp1.txt tmp2.txt 
+}
+
+run_blastn_with_seqs hyperedits/folding/bp100_revcomp.fasta \
+  hyperedits/folding/bp2000.fasta \
+  hyperedits/folding/blast_sig_sites_2000nt_with_seqs.txt
+```
+
+```{r}
+blast_res <- read_tsv("hyperedits/folding/blast_sig_sites_2000nt_with_seqs.txt",
+                      col_names = F)
+blast_res <- mutate(blast_res, 
+                    chrom = str_match(X1, "^([^::]+)::")[, 2], 
+                    edit_pos = str_match(X1, "::(\\d+)::")[, 2] %>%
+                      as.integer(),
+                    start = str_match(X1, ":(\\d+)-")[, 2] %>%
+                      as.integer(),
+                    end = str_match(X1, "-(\\d+)")[, 2] %>%
+                      as.integer(),
+                    rel_edit_pos = 101 - X7 + 1,
+                    query_pos_match_start = X7 + start,
+                    query_pos_match_end = X8 + start,
+                    query_strand = str_match(X1, "\\(([+-])\\)$")[, 2],
+                    reference_pos_start = str_match(X2, ":(\\d+)-")[, 2] %>% 
+                      as.integer(),
+                    reference_pos_end = str_match(X2, "-(\\d+)")[, 2]
+                    %>% as.integer(),
+                    reference_pos_match_start = reference_pos_start + X9,
+                    reference_pos_match_end = reference_pos_start + X10,
+                    ref_strand = str_match(X1, "\\(([+-])\\)$")[, 2]
+                    )
+
+overlapped <- filter(blast_res,
+                     X7 <= rel_edit_pos, 
+                     X8 >= rel_edit_pos)
+
+bound_sites <- filter(overlapped,
+               X4 >= 20)
+
+bound_sites <- arrange(bound_sites, X11)
+
+
+example_sites <- group_by(bound_sites, chrom) %>% 
+  dplyr::slice(1) %>% 
+  arrange(X11) %>% 
+  .[1:10, ]
+
+
+example_sites_summary <- dplyr::select(example_sites, header = X1, 
+                               q_seq = X13, r_seq = X14, rel_edit_pos)
+example_sites_summary <- mutate(example_sites_summary,
+                        q_seq = str_replace_all(q_seq, "-", ""),
+                        r_seq = str_replace_all(r_seq, "-", ""),
+                        new_edit_pos = nchar(q_seq) - rel_edit_pos + 1,
+                        q_seq  = kentr::revComp(q_seq))
+
+example_sites_summary <- mutate(example_sites_summary, 
+                        seq = str_c(q_seq, "&", r_seq))
+example_sites
+```
+
+
+```{r}
+for (i in seq_along(1:nrow(example_sites_summary))){
+  
+  fa_name <- example_sites_summary[i, "header"]
+  fa_seq <- example_sites_summary[i, "seq"]
+  site_pos <- example_sites_summary[i, "new_edit_pos"]
+  system(
+    paste0('cd hyperedits; echo "',
+           fa_seq,
+           '" | RNAcofold ', 
+           ' | RNAplot -t 1 --pre "',
+           " 1 -50 0 (",
+           fa_name,
+           ") Label ",
+           site_pos, 
+           ' cmark ',
+           site_pos, 
+           ' -7 0 (editing site) Label" --auto-id --id-prefix "sequences_', 
+           i, '"' ))
+  
+}
+
+
+
+```
+
+
+## Run rna folding
+
+```{r make_sig_200bp}
+genome <- read_genome(file.path(db_dir, "ensembl85/chrom_sizes.txt"))
+fasta <-  path.expand(file.path(db_dir, "ensembl85/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa"))
+
+dat <- read.table("edits/A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz",
+                header = T,
+                sep = "\t", stringsAsFactors = F) %>% as_data_frame()
+dat <- dplyr::filter(dat, 
+                       kmeans_cluster == 1)
+                     
+hyper <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation_kmeans.txt.gz")
+hyper <- dplyr::filter(hyper, 
+                       FDR < 0.01,
+                       kmeans_cluster != 3)
+
+edits <- list(dat, hyper)
+names(edits) <- c("GATK", "Hyperediting")
+edits <- bind_rows(edits, .id = "pipeline")
+
+# annotate if found in both
+
+edits %>% 
+  dplyr::select(chrom, start, strand, pipeline) %>% 
+  unique() %>% 
+  dplyr::group_by(chrom, start, strand) %>% 
+  mutate(sites = n(),
+         pipeline = ifelse(sites > 1,
+                           "both",
+                           pipeline)) %>% 
+  ungroup() -> pipeline_used
+
+edits <- left_join(edits, pipeline_used,
+                   by = c("chrom", "start", "strand")) %>% 
+  mutate(pipeline = ifelse(pipeline.y == "both",
+                           "both",
+                           pipeline.x)) %>% 
+  dplyr::select(-sites, -pipeline.x, -pipeline.y) %>% 
+  unique()
+
+# make bed like file
+bed <- dplyr::select(edits, 
+              chrom,
+              start, #derived from bed file, zero based
+              end,
+              site,
+              kmeans_cluster, 
+              strand,
+              pipeline) %>% unique()
+
+# drop editing sites near ends of chroms
+trimmed_bed <- bed_slop(bed, both = 200, genome, trim = F)
+
+# only keep intervals still present in trimmed bed
+bed <- bed %>% 
+  filter(site %in% trimmed_bed$site)
+
+bed <- ungroup(bed) %>% 
+  dplyr::select(-kmeans_cluster,
+                -pipeline) %>% 
+  unique()
+
+# +/- 100 nt
+slop_bed <- bed_slop(bed, 
+                     both = 200, 
+                     genome, 
+                     strand = TRUE)
+
+nsites <- nrow(slop_bed)
+names(nsites) <- "sig_sites"
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+
+dir.create("hyperedits/folding/", recursive = T)
+kentr::write_fasta(seqs, "hyperedits/folding/bp200.fasta")
+
+```
+
+```{r make_nonsig-200bp}
+## also generate a set of intervasl from non-significant sites
+
+hyper_edits <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation_kmeans.txt.gz")
+hyper_edits_non_sig <- hyper_edits %>% 
+  dplyr::filter(FDR > 0.01)
+
+gatk_non_sigsites <- read_tsv("edits/A_G_filtered_notsignificant_sites_annotation_kmeans.txt.gz")
+gatk_non_sigsites <- gatk_non_sigsites %>% 
+  dplyr::select(chrom, start, end, strand, site, EFF, FDR, GeneName:ANNOTATED) %>% 
+  unique()
+
+shared_sites <- semi_join(hyper_edits_non_sig, gatk_non_sigsites, 
+                           by = c("site"))
+
+# make bed like file
+nonsig_bed <- dplyr::mutate(shared_sites, score = 0) %>% 
+              dplyr::select( chrom,
+              start,
+              end,
+              site,
+              score,
+              strand) %>% 
+  unique()
+
+# drop editing sites near ends of chroms
+trimmed_nonsig_bed <- bed_slop(nonsig_bed, 
+                               both = 200, genome, trim = F)
+
+# only keep intervals still present in trimmed bed
+nonsig_bed <- nonsig_bed %>% 
+  filter(site %in% trimmed_nonsig_bed$site) %>% 
+  unique()
+
+nonsig_bed <- ungroup(nonsig_bed)
+
+slop_bed <- bed_slop(nonsig_bed, both = 200, genome, 
+                     strand = TRUE)
+
+nsites <- c(nsites, nrow(slop_bed))
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+kentr::write_fasta(seqs, "hyperedits/folding/bp200_nonsig.fasta")
+
+
+
+```
+
+```{r make_shuf_200bp}
+
+shuf_edits <- read_tsv("hyperedits/shuffled_editing_sites.bed")
+
+# drop editing sites near ends of chroms
+trimmed_bed <- bed_slop(shuf_edits, both = 200, genome, trim = F)
+
+# only keep intervals still present in trimmed bed
+bed <- shuf_edits %>% 
+  filter(site.x %in% trimmed_bed$site.x)
+
+bed <- ungroup(bed)
+# +/- 100 nt
+slop_bed <- bed_slop(bed, both = 200, genome, 
+                     strand = TRUE)
+
+nsites <- c(nsites, nrow(slop_bed))
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site.x, header, 
+                                    sep = ":::"))
+
+dir.create("hyperedits/folding/", recursive = T)
+kentr::write_fasta(seqs, "hyperedits/folding/bp200_shuf.fasta")
+
+```
+
+```{bash, eval = F}
+RNAfold --noPS -T 4  < hyperedits/folding/bp200.fasta >  hyperedits/folding/sig_rnafold_4.txt
+RNAfold --noPS -T 37  <  hyperedits/folding/bp200.fasta >  hyperedits/folding/sig_rnafold_37.txt
+
+
+RNAfold --noPS -T 4  < hyperedits/folding/bp200_nonsig.fasta >  hyperedits/folding/nonsig_rnafold_4.txt
+RNAfold --noPS -T 37  <  hyperedits/folding/bp200_nonsig.fasta >  hyperedits/folding/nonsig_rnafold_37.txt
+
+RNAfold --noPS -T 4  < hyperedits/folding/bp200_shuf.fasta >  hyperedits/folding/shuf_rnafold_4.txt
+RNAfold --noPS -T 37  <  hyperedits/folding/bp200_shuf.fasta >  hyperedits/folding/shuf_rnafold_37.txt
+```
+
+```{bash, eval = F}
+mkdir -p hyperedits/folding/rnaplfold/
+outdir="hyperedits/folding/rnaplfold"
+cd $outdir
+
+RNAplfold -W 400 -u 1 -T 4  < ../bp200.fasta > sig_rnafold_4_test.txt
+
+for file in *.ps; do rm -f $file; done
+
+```
+
+```{bash, eval = F}
+RNAfold --noPS -T 37  <  $outdir/bp200.fasta >  $outdir/sig_rnafold_37.txt
+
+
+RNAfold --noPS -T 4  < $outdir/bp200_nonsig.fasta >  $outdir/nonsig_rnafold_4.txt
+RNAfold --noPS -T 37  <  $outdir/bp200_nonsig.fasta >  $outdir/nonsig_rnafold_37.txt
+
+RNAfold --noPS -T 4  < $outdir/bp200_shuf.fasta >  $outdir/shuf_rnafold_4.txt
+RNAfold --noPS -T 37  <  $outdir/bp200_shuf.fasta >  $outdir/shuf_rnafold_37.txt
+```
+
+```{r}
+read_rnafold <- function(file_in) {
+  x <- read_lines(file_in)
+  name <- x[startsWith(x, ">")]
+  x <- x[!startsWith(x, ">")]
+  x <- x[!stringi::stri_detect_regex(x, "[ATCUG]")]
+  x <- str_split(x, " \\(", simplify = T)[, 2]
+  x <- str_replace_all(x, "[\\(\\)]", "")
+  x <- str_trim(x, side = "left")
+  x <- as.numeric(x)
+  data_frame(delta_g = x, 
+       seq = name) 
+}
+
+folding_dat <- c(
+  "hyperedits/folding/sig_rnafold_4.txt",
+  "hyperedits/folding/sig_rnafold_37.txt",
+  "hyperedits/folding/nonsig_rnafold_4.txt",
+  "hyperedits/folding/nonsig_rnafold_37.txt",
+  "hyperedits/folding/shuf_rnafold_4.txt",
+  "hyperedits/folding/shuf_rnafold_37.txt"
+)
+
+
+folding_res <- map(folding_dat,
+                   ~read_rnafold(.x))
+
+names(folding_res) <- c(
+  "sig_4",
+  "sig_37",
+  "nonsig_4",
+  "nonsig_37",
+  "shuf_4",
+  "shuf_37"
+)
+
+folding_res <- bind_rows(folding_res, .id = "temp")
+folding_res <- tidyr::separate(folding_res, temp, 
+                               c("type", "temp"), sep = "_")
+
+folding_res <- mutate(folding_res, 
+                      type = ifelse(type == "sig",
+                                    "torpor-enriched\nsite",
+                                    ifelse(type == "nonsig",
+                                    "constitutive\nsite",
+                                    "random\nsite")))
+
+folding_res <- mutate(folding_res,
+                      type = factor(type,
+                                    levels = c(
+                                      "torpor-enriched\nsite",
+                                      "constitutive\nsite",
+                                      "random\nsite"
+                                    )))
+
+diff_delta_g <- group_by(folding_res, 
+                         type,
+                         seq) %>% 
+  arrange(temp, .by_group = T) %>% 
+  summarize(
+    delta_g_37 = nth(delta_g, 1),
+    delta_g_4 = nth(delta_g, 2),
+    delta_g_diff = nth(delta_g, 2) - nth(delta_g, 1))
+
+plt <- ggplot(folding_res, aes(temp, delta_g)) + 
+  geom_boxplot(aes(fill = temp),
+              coef = 10) +
+  scale_fill_manual(values = c("#D9D9D9", "#525252"), 
+                    name = "Folding\nTemperature") +
+  ylab("RNAfold delta-G") +
+  facet_wrap(~type) +
+  theme(
+    axis.title.x = element_blank()
+  )
+plt
+save_plot("edits/rna_duplex.pdf", plt, base_width = 8, base_height = 7)
+ggplot(diff_delta_g, aes(type, delta_g_diff)) + 
+  geom_violin(aes(fill = type)) 
+
+```
+

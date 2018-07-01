@@ -1,0 +1,500 @@
+---
+title: "Splicing Analysis"
+author: "Kent Riemondy RBI"
+date: "8/30/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+
+```{r ,message=FALSE, warning=FALSE, echo=FALSE}
+source("globals.R")
+library("DEXSeq")
+```
+
+
+```{r basic_stats}
+fc_stats <- read_tsv(file.path(data_dir, "featurecounts/dexseq/count_summary_introns.tsv.summary"))
+unannotated <- colSums(fc_stats[2:nrow(fc_stats), 2:ncol(fc_stats)])
+annotated <- fc_stats[1, 2:ncol(fc_stats)] %>% unlist()
+
+prop_counted <- annotated / unannotated
+max(prop_counted)
+min(prop_counted)
+```
+```{r input, eval = T}
+
+region <- c(hypothalamus = "hypothalamus",
+            forebrain = "brainrest",
+            medulla = "medulla")
+map(region,
+           ~readRDS(file.path("splicing", paste0(.x, "dexseq.rds")))) -> tmp
+    
+map(tmp,
+    ~DEXSeqResults(.x)) -> tmp
+
+map(tmp,
+    ~as.data.frame(.x)) -> tmp
+
+drop_lastcol <- function(df){
+  df[, -ncol(df)]
+}
+map(tmp, drop_lastcol) -> dat
+
+dat <- map(dat,
+           ~tibble::rownames_to_column(.x, "exonID") %>%  
+             as_data_frame())
+
+mats <- map(dat, 
+            ~.x %>% 
+            filter(padj < 0.01) %>%  
+            dplyr::select(Ar:SpD) %>% 
+            as.matrix)
+
+plot_heatmap <- function(mat, region_name = region, ...){
+  scaled_mat <- t(scale(t(mat)))
+  scaled_mat <- na.omit(scaled_mat)
+
+  n_exons <- nrow(scaled_mat)
+  Heatmap(scaled_mat,
+          row_title = "Exons",
+          column_title = paste0("Significant Exons in ", 
+                               region_name, "\n", "n = ", n_exons),
+            heatmap_legend_param = list(
+              title = "Mean Centered \nLog2 Exon Usage"), ...)
+}
+
+map2(mats, names(region), ~plot_heatmap(.x, .y))
+```
+
+```{r vst_heatmaps, fig.width = 6}
+dexseq_objs <- map(region, ~readRDS(paste0("splicing/", .x, "dexseq.rds")))
+
+vst_objs <- map(dexseq_objs, 
+                ~varianceStabilizingTransformation(.x))
+
+vst_mats <- map(vst_objs, ~assay(.x))
+
+rename_cols <- function(mat, obj) {
+  colnames(mat) <- obj@colData$samples
+  mat
+}
+
+vst_mats <- map2(vst_mats, vst_objs, ~rename_cols(.x, .y))
+
+lst_of_sites <- map(dat, 
+                  ~.x %>% 
+                  filter(padj < 0.01) %>%  
+                  dplyr::select(exonID) %>% 
+                  unlist())
+
+#select only significant exons and drop per gene estimates
+sig_mats_per_sample <- map2(vst_mats, lst_of_sites, 
+                            ~.x[rownames(.x) %in% .y, 1:30])
+
+
+plot_pdata_heatmap <- function(mat, title, pdata, diana_class = NULL, save = TRUE, ...) {
+  # plot heatmap, putting all legends into a single column:
+  # http://zuguang.de/blog/html/merge_heatmap_and_annotation_legend.html
+  n_sites <- nrow(mat)
+  scaled_mat <- t(scale(t(mat)))
+  scaled_mat <- na.omit(scaled_mat)
+  
+  ha <- HeatmapAnnotation(df = pdata[c("region", "State")], 
+                                     col = list(
+                                        region = region_cols,
+                                         State = state_cols),
+                        annotation_legend_param = list(
+                             State = list(title = "Hiberation\nState",
+                                          at = state_order, 
+                                          labels = state_order)),
+                        show_legend = F)
+  
+  anno_legend_list <- lapply(ha@anno_list[c("region", "State")], 
+    function(anno) color_mapping_legend(anno@color_mapping, plot = FALSE))
+
+  ht <- Heatmap(scaled_mat, 
+          show_column_names = FALSE,
+          show_row_dend = FALSE,
+          top_annotation = ha,
+          row_title = "Exons",
+          column_title = paste0("Significant Exons in ",  title, 
+                                "\n", "n = ", n_sites),
+          heatmap_legend_param = list(
+            title = "Mean Centered \nLog2 Exon Usage"),
+          show_heatmap_legend = FALSE,
+          ...)
+  
+  heatmap_legend = color_mapping_legend(ht@matrix_color_mapping, 
+                                        param = ht@matrix_color_mapping_param, 
+                                        plot = FALSE)
+  
+  if(!is.null(diana_class)){
+    row_annot <- rowAnnotation(df = diana_class,
+                       width = unit(1, "cm"))
+    plot <- draw(ht + row_annot, annotation_legend_side = "left", 
+       heatmap_legend_side = "left")
+  } else {
+    plot <- draw(ht, 
+                 heatmap_legend_list = c(anno_legend_list, list(heatmap_legend)),
+                 annotation_legend_side = "left", 
+                 heatmap_legend_side = "left")
+  }
+  
+  if (save){
+    pdf(paste0(title, "_heatmap.pdf"))
+    draw(ht, 
+         heatmap_legend_list = c(anno_legend_list, list(heatmap_legend)),
+         annotation_legend_side = "left", 
+         heatmap_legend_side = "left")
+    dev.off()
+  } 
+  plot
+}
+
+pdatas <- map(vst_objs, ~.x@colData %>% .[1:30, ])
+
+pwalk(list(sig_mats_per_sample, 
+    names(sig_mats_per_sample), 
+    pdatas),
+     function(x,y,z) plot_pdata_heatmap(x, y, z, 
+                   show_row_names = FALSE))
+
+all_sig <- unlist(lst_of_sites) %>%  unique()
+#all_mat <- do.call(cbind, vst_mats)
+#all_sig_mat <- all_mat[rownames(all_mat) %in% all_sig, 1:30]
+#plot_pdata_heatmap(all_sig_mat, y, z, 
+#                   show_row_names = FALSE)
+```
+
+```{r cluster, eval = F}
+dianas <- map(sig_mats_per_sample, ~cluster::diana(.x))
+classes <- map(dianas, ~data.frame(class = as.factor(cutree(as.hclust(.x), k = 2)),
+                                   row.names = names(cutree(as.hclust(.x), k = 2))))
+classes 
+pwalk(list(sig_mats_per_sample, 
+    names(sig_mats_per_sample), 
+    pdatas,
+    classes),
+     function(x,y,z, a) plot_pdata_heatmap(x, y, z, a, save = FALSE,
+                   show_row_names = FALSE))
+```
+
+```{r}
+library(eulerr)
+
+all_unique_sites <- unlist(lst_of_sites) %>% unique()
+lgl_df <- map_df(lst_of_sites, ~all_unique_sites %in% .x)
+lgl_df <- as.data.frame(lgl_df)
+fit <- euler(lgl_df)
+
+pdf("splicing/exon_venn_diagrams.pdf")
+plt <- plot(fit, counts = TRUE, 
+           fill = region_cols, 
+           fill_opacity = 0.75,
+           main = "Shared Significant Exons")
+print(plt)
+dev.off()
+
+plot(fit, counts = TRUE, 
+      fill = region_cols, 
+      fill_opacity = 0.75)
+
+```
+
+
+```{r check_edits}
+edits <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_filtered_sites_annotation.txt.gz")
+
+#remove intergenic variants
+sig_edits_all <- filter(edits, 
+                    FDR < 0.01,
+                    !is.na(GENE_NAME))
+
+sig_edits <- split(sig_edits_all, sig_edits_all$Region)
+
+
+sig_edits <- map(sig_edits, ~dplyr::select(.x, GENE_NAME) %>% 
+                   unlist())
+
+# read in annotation data
+annots <- read_tsv(file.path("mrna", "fixed_all95.bed.gz"), col_names = F)
+
+geneid_mapping <- dplyr::select(annots, X8, X11, X12, X10) %>% 
+  unique()
+
+colnames(geneid_mapping) <- c("geneId", "transcriptpId", "geneName", "ensemblid")
+
+sig_exons <- map(dat, ~left_join(.x, 
+                   geneid_mapping, by = c("groupID" = "geneId")) %>% 
+  filter(padj < 0.01) %>% 
+    dplyr::select(geneName) %>% unlist())
+sig_exons <- sig_exons[c(2, 1, 3)]
+names(sig_exons) <- names(sig_edits)
+list_of_exons_and_genes <- transpose(list(genes_with_editing = sig_edits, 
+                                          genes_with_alt_splicing = sig_exons))
+
+plot_prop_venn <- function(gene_lst, region){
+  all_unique_sites <- unlist(gene_lst) %>% unique()
+  lgl_df <- map_df(gene_lst, ~all_unique_sites %in% .x)
+  lgl_df <- as.data.frame(lgl_df)
+  fit <- euler(lgl_df)
+  
+  plot(fit, counts = TRUE, 
+        fill = region_cols, 
+        fill_opacity = 0.75,
+        main = region)
+
+}
+
+map2(list_of_exons_and_genes, 
+     names(list_of_exons_and_genes), 
+           ~plot_prop_venn(.x, region = .y))
+
+map2(list_of_exons_and_genes, 
+     names(list_of_exons_and_genes), 
+           function(x, y) {
+             pdf(paste0("splicing/", y, "_de_exons_edit_sites.pdf"))
+             print(plot_prop_venn(x, region = y))
+             dev.off()
+             })
+```
+
+
+```{r shared_splicing}
+
+
+
+
+sig_exons <- map(dat, 
+                  ~.x %>% 
+                  filter(padj < 0.01))
+
+sig_exons <- bind_rows(sig_exons, .id = "Region")
+
+sig_exons <- sig_exons %>% 
+  arrange(padj) %>%
+  dplyr::select(-matches("countData"))
+
+sig_exons <- left_join(sig_exons, geneid_mapping, by = c("groupID" = "geneId"))
+sig_exons <- dplyr::rename(sig_exons, 
+                           chrom = genomicData.seqnames, 
+                           start = genomicData.start, 
+                           end = genomicData.end, 
+                           strand = genomicData.strand)
+
+map(list_of_exons_and_genes, ~dplyr::intersect(.x[[1]], 
+                                               .x[[2]])) -> shared_exonedits
+ 
+intersect(intersect(shared_exonedits[[1]], shared_exonedits[[2]]), 
+          shared_exonedits[[3]]) -> all_shared_exonedits
+
+dexresults <- map(dexseq_objs, ~DEXSeqResults(.x))
+
+reordered_cols <- state_cols[c(5, 3, 2, 4, 1, 6)]
+map(dexresults, ~DEXSeq::plotDEXSeq(.x, 
+                   "G13689", 
+                   fitExpToVar = "State",
+                   legend = T,
+                   color= reordered_cols))
+
+map(dexresults, ~DEXSeq::plotDEXSeq(.x, 
+                   "G33924", 
+                   fitExpToVar = "State",
+                   legend = T,
+                   color= reordered_cols))
+```
+
+
+```{r, eval = F}
+bed_intersect(sig_exons, sig_edits_all) %>% 
+  dplyr::select(Region.x:ensemblid.x) %>% 
+  unique() -> edits_overlapping_exons
+bed_intersect(sig_exons, sig_edits_all, invert = T) -> no_edits_overlapping_exons
+
+plot_heatmap_selected_sites <- function(mat, sites, pdata, ...) {
+  
+  scaled_mat <- t(scale(t(mat)))
+  scaled_mat <- na.omit(scaled_mat)
+    
+  int_mat <- scaled_mat[rownames(scaled_mat) %in% sites, ]  
+  n_sites <- nrow(int_mat)
+  ha <- HeatmapAnnotation(df = pdata[c("region", "State")], 
+                                       col = list(
+                                          region = region_cols,
+                                           State = state_cols),
+                          annotation_legend_param = list(
+                               State = list(title = "Hiberation\nState",
+                                            at = state_order, 
+                                            labels = state_order)))
+  ht <- Heatmap(int_mat, 
+            show_column_names = FALSE,
+            show_row_dend = FALSE,
+            show_row_names = F,
+            top_annotation = ha,
+            row_title = "Exons",
+            column_title = paste0("Significant Exons ", 
+                                  "\n", "n = ", n_sites),
+            heatmap_legend_param = list(
+              title = "Mean Centered \nLog2 Exon Usage"),
+            ...)
+  
+  ht  
+}
+
+map2(sig_mats_per_sample,
+     pdatas,
+     ~plot_heatmap_selected_sites(.x, 
+                                   edits_overlapping_exons$exonID.x,
+                                  .y))
+
+plot_heatmap_selected_sites(sig_mats_per_sample$hypothalamus,
+                            edits_overlapping_exons$exonID.x,
+                            pdatas[[1]])
+
+```
+
+```{r annotate_res}
+
+mart <- biomaRt::useMart(biomart = "ENSEMBL_MART_ENSEMBL",
+  dataset = "itridecemlineatus_gene_ensembl",
+  host = 'ensembl.org')
+
+t2g <- biomaRt::getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id",
+    "external_gene_name", "transcript_biotype"), mart = mart)
+t2g <- dplyr::rename(t2g, target_id = ensembl_transcript_id,
+  ens_gene = ensembl_gene_id, ext_gene = external_gene_name)
+
+t2g <- mutate(t2g, ext_gene = ifelse(str_detect(ext_gene, "."), 
+                                     ext_gene, ens_gene))
+
+annot_dat <- map(dat, ~left_join(.x, t2g, by = c("groupID" = "ens_gene")))
+
+```
+
+
+```{r}
+region <- c(hypothalamus = "hypothalamus",
+            forebrain = "brainrest",
+            medulla = "medulla")
+map(region,
+           ~readRDS(file.path("splicing", paste0(.x, "dexseq.rds")))) -> tmp
+    
+map(tmp,
+    ~DEXSeqResults(.x)) -> tmp
+
+map(tmp,
+    ~as.data.frame(.x)) -> tmp
+
+drop_lastcol <- function(df){
+  df[, -ncol(df)]
+}
+map(tmp, drop_lastcol) -> dat
+
+dat <- map(dat,
+           ~tibble::rownames_to_column(.x, "exonID") %>%  
+             as_data_frame())
+
+dexseq_objs <- map(region, ~readRDS(paste0("splicing/", .x, "dexseq.rds")))
+
+
+dexresults <- map(dexseq_objs, ~DEXSeqResults(.x))
+
+fc_stats <- read_tsv(file.path(data_dir, "featurecounts/dexseq/count_summary_introns.tsv"), skip = 1)
+fc_stats %>% dplyr::filter(Geneid == "ENSSTOG00000001683") -> zcchc8
+```
+
+```{r}
+map(dat, 
+  ~dplyr::filter(.x, groupID == "ENSSTOG00000001683")) -> z_dat
+
+plot_usage <- function(dat, region, exon_names = c(
+                                 "5' exon\n(#11)",
+                                 "intron\n with editing",
+                                 "3' exon\n(#12)"
+                               ), 
+                       exons_to_plot = 21:23){
+  dat %>% 
+  dplyr::select(featureID, padj:SpD) %>% 
+  gather(key = state, value = exon_usage, -featureID, -padj) %>% 
+  mutate(featureID = str_replace(featureID, "E", "") %>% 
+           str_replace_all(., "^0+", "") %>% 
+           as.character()) -> z_dat_tidy
+
+#subset to exons/introns near the editing site
+
+z_dat_tidy %>% 
+  dplyr::filter(featureID %in% exons_to_plot) -> z_dat_tidy
+
+z_dat_tidy$featureID <- factor(z_dat_tidy$featureID,
+                               labels = exon_names)
+fdrs <- z_dat_tidy %>% 
+  group_by(featureID) %>% 
+  summarize(padj = min(padj)) %>% 
+  mutate(padj = paste0("p = ", formatC(padj, 3)))
+ 
+ggplot(z_dat_tidy, aes(featureID, exon_usage)) + 
+   geom_point(aes(colour = state)) +
+   scale_colour_manual(values = state_cols, name = "")+
+   annotate("text", 
+            x = unique(z_dat_tidy$featureID),
+            y = max(z_dat_tidy$exon_usage) * 1.10,
+            label = fdrs$padj) +
+   labs(y = "Relative Usage",
+        x = "",
+        title = region) 
+}
+
+names(z_dat) <- str_replace(names(z_dat), 
+                            "forebrain", 
+                            "Cerebrum") %>% 
+  str_to_title()
+map2(z_dat,
+     names(z_dat),
+     ~plot_usage(.x, .y, 
+                 exons_to_plot = 21:23)) -> plts
+
+plot_grid(plotlist = plts, 
+          nrow = 1) -> plt
+
+save_plot("splicing/zcchc8_editing_site.pdf", plt, base_width = 12)
+
+
+map2(z_dat,
+     names(z_dat),
+     ~plot_usage(.x, .y, 
+                 exons_to_plot = 21:25,
+                 exon_names = c("5' exon\n(#11)",
+                    "intron\n with editing",
+                    "3' exon\n(#12)",
+                    "intron",
+                    "exon\n(#13)")
+     )) -> plts
+
+plot_grid(plotlist = plts, 
+          nrow = 1) -> plt
+
+save_plot("splicing/zcchc8_editing_site_with_distal.pdf", plt, base_width = 16)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

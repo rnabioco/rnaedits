@@ -1,0 +1,676 @@
+---
+title: "RNA structure around editing sites"
+author: "Kent Riemondy RBI"
+date: "8/29/2017"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+## Examine RNA structure of editing site
+
+```{r ,message=FALSE, warning=FALSE}
+source("globals.R")
+```
+
+```{r read_in_dat}
+genome <- read_genome(file.path(db_dir, "ensembl85/chrom_sizes.txt"))
+fasta <-  path.expand(file.path(db_dir, "ensembl85/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa"))
+gtf <- read_tsv(file.path("mrna/fixed_all95.bed.gz"),
+                col_names = F)
+
+dat <- read.table("edits/A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz",
+                header = T,
+                sep = "\t", stringsAsFactors = F) %>% as_data_frame()
+
+# make bed like file
+bed <- dplyr::select(dat, 
+              chrom,
+              start, #derived from bed file, zero based
+              end,
+              site,
+              kmeans_cluster, 
+              strand) %>% unique()
+
+# make simple annotation 
+colnames(gtf) <- c(
+  "chrom",
+  "start",
+  "end",
+  "name",
+  "score",
+  "strand",
+  "biotype", 
+  "denovo_gid", 
+  "denovo_tid", 
+  "gene_id", 
+  "transcript_id", 
+  "gene_name", 
+  "region")
+
+tx_gtf <- filter(gtf,
+                   region == "transcript")
+
+# drop editing sites near ends of chroms
+trimmed_bed <- bed_slop(bed, both = 2000, genome, trim = F)
+
+# only keep intervals still present in trimmed bed
+bed <- bed %>% filter(site %in% trimmed_bed$site)
+
+# annotate with transcripts
+bed <- bed_intersect(group_by(bed, strand), group_by(tx_gtf, strand))
+
+# get min and max coords for txs
+bed <- group_by(bed, 
+                chrom, start.x, end.x, site.x, kmeans_cluster.x, 
+                strand.x) %>% 
+  summarize(tx_start = min(start.y), 
+            tx_end = max(end.y)) %>% 
+  dplyr::rename(chrom = chrom,
+         start = start.x,
+         end = end.x,
+         strand = strand.x,
+         site = site.x)
+
+bed <- ungroup(bed)
+# +/- 100 nt
+slop_bed <- bed_slop(bed, both = 100, genome, 
+                     strand = TRUE)
+# trim slopped coords if past transcript
+slop_bed <- mutate(slop_bed, 
+                   start = ifelse(tx_start > start,
+                                  tx_start, 
+                                  start), 
+                   end = ifelse(tx_end < end,
+                                tx_end,
+                                end))
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+
+dir.create("edits/folding/", recursive = T)
+kentr::write_fasta(seqs, "edits/folding/bp100.fasta")
+
+rv_seqs <- mutate(seqs, seq = kentr::revComp(seq))
+kentr::write_fasta(rv_seqs, "edits/folding/bp100_revcomp.fasta")
+
+
+
+## make regions to search (+/- 20kbp)
+slop_bed <- bed_slop(bed, both = 2000, 
+                     genome,
+                     strand = TRUE)
+
+# trim slopped coords if past transcript
+slop_bed <- mutate(slop_bed, 
+                   start = ifelse(tx_start > start,
+                                  tx_start, 
+                                  start), 
+                   end = ifelse(tx_end < end,
+                                tx_end,
+                                end))
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+kentr::write_fasta(seqs, "edits/folding/bp2000.fasta")
+
+rv_seqs <- mutate(seqs, seq = kentr::revComp(seq))
+kentr::write_fasta(rv_seqs, "edits/folding/bp2000_revcomp.fasta")
+
+## also generate a set of intervasl from non-significant sites
+
+dat <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_all_sites_raw_counts.txt.gz")
+
+# make bed like file
+nonsig_bed <- dplyr::select(dat, 
+              `#chrom`,
+              pos, #derived from bed file, zero based
+              edit_site) %>% 
+  unique() %>% 
+  dplyr::rename(chrom = `#chrom`,
+                site = edit_site) %>% 
+  mutate(start = pos - 1,
+         end = pos,
+         strand = ifelse(str_detect(site, "T$"),
+                                    "-",
+                                    "+"),
+         score = 0) %>% 
+  dplyr::select(chrom, 
+         start, 
+         end,
+         site,
+         score,
+         strand)
+
+# drop significant sites
+nonsig_bed <- anti_join(nonsig_bed,
+                        bed,
+                        by = "site")
+# drop editing sites near ends of chroms
+trimmed_nonsig_bed <- bed_slop(nonsig_bed, both = 2000, genome, trim = F)
+
+# only keep intervals still present in trimmed bed
+nonsig_bed <- nonsig_bed %>% 
+  filter(site %in% trimmed_nonsig_bed$site) %>% 
+  unique()
+
+# annotate with transcripts
+nonsig_bed <- bed_intersect(group_by(nonsig_bed, strand), group_by(tx_gtf, strand))
+
+# get min and max coords for txs
+nonsig_bed <- group_by(nonsig_bed, 
+                chrom, start.x, end.x, site.x, 
+                strand.x) %>% 
+  summarize(tx_start = min(start.y), 
+            tx_end = max(end.y)) %>% 
+  dplyr::rename(chrom = chrom,
+         start = start.x,
+         end = end.x,
+         strand = strand.x,
+         site = site.x)
+
+nonsig_bed <- ungroup(nonsig_bed)
+# randomly select nrows(bed)
+set.seed(20170803)
+nonsig_bed <- dplyr::sample_n(nonsig_bed, 
+                       size = nrow(bed), replace = F)
+
+slop_bed <- bed_slop(nonsig_bed, both = 100, genome, 
+                     strand = TRUE)
+
+# trim slopped coords if past transcript
+slop_bed <- mutate(slop_bed, 
+                   start = ifelse(tx_start > start,
+                                  tx_start, 
+                                  start), 
+                   end = ifelse(tx_end < end,
+                                tx_end,
+                                end))
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+kentr::write_fasta(seqs, "edits/folding/bp100_nonsig.fasta")
+
+rv_seqs <- mutate(seqs, seq = kentr::revComp(seq))
+kentr::write_fasta(rv_seqs, "edits/folding/bp100_nonsig_revcomp.fasta")
+
+## make regions to search (+/- 3kbp)
+slop_bed <- bed_slop(bed, both = 2000, genome,
+                     strand = TRUE)
+
+# trim slopped coords if past transcript
+slop_bed <- mutate(slop_bed, 
+                   start = ifelse(tx_start > start,
+                                  tx_start, 
+                                  start), 
+                   end = ifelse(tx_end < end,
+                                tx_end,
+                                end))
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+kentr::write_fasta(seqs, "edits/folding/bp2000_nonsig.fasta")
+
+rv_seqs <- mutate(seqs, seq = kentr::revComp(seq))
+kentr::write_fasta(rv_seqs, "edits/folding/bp2000_nonsig_revcomp.fasta")
+
+```
+
+```{r read_in_conserved_sites}
+mouse <- read_tsv("edits/shared_mouse_all_edits.txt")
+human <- read_tsv("edits/shared_human_all_edits.txt")
+
+con_edits <- list(mouse, human)
+con_edits <- map(con_edits, ~dplyr::select(.x, site.y)) # parse out original squirrel intervals from site.y col
+con_edits <- map(con_edits, ~tidyr::separate(.x, 
+                                             site.y,
+                                             c("chrom", "start", "name"),
+                                             sep = "::",
+                                             remove = F))
+con_edits <- map(con_edits, ~mutate(.x, 
+                                    start = as.numeric(start),
+                                    end  = start,
+                                    start = start - 1,
+                                    strand = ifelse(name == "A",
+                                                    "+",
+                                                    "-"),
+                                    site = site.y))
+
+con_edits <- bind_rows(con_edits)
+con_edits <- unique(con_edits)
+
+# drop editing sites near ends of chroms
+trimmed_bed <- bed_slop(con_edits, both = 2000, genome, trim = F)
+
+# only keep intervals still present in trimmed bed
+bed <- con_edits %>% filter(site %in% trimmed_bed$site)
+
+# annotate with transcripts
+bed <- bed_intersect(group_by(bed, strand), group_by(tx_gtf, strand))
+
+# get min and max coords for txs
+bed <- group_by(bed, 
+                chrom, start.x, end.x, site.x, 
+                strand.x) %>% 
+  summarize(tx_start = min(start.y), 
+            tx_end = max(end.y)) %>% 
+  dplyr::rename(chrom = chrom,
+         start = start.x,
+         end = end.x,
+         strand = strand.x,
+         site = site.x)
+
+bed <- ungroup(bed)
+# +/- 100 nt
+slop_bed <- bed_slop(bed, both = 100, genome, 
+                     strand = TRUE)
+# trim slopped coords if past transcript
+slop_bed <- mutate(slop_bed, 
+                   start = ifelse(tx_start > start,
+                                  tx_start, 
+                                  start), 
+                   end = ifelse(tx_end < end,
+                                tx_end,
+                                end))
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+
+dir.create("edits/folding/", recursive = T)
+kentr::write_fasta(seqs, "edits/folding/conserved_sites_bp100.fasta")
+
+rv_seqs <- mutate(seqs, seq = kentr::revComp(seq))
+kentr::write_fasta(rv_seqs, "edits/folding/conserved_sites_bp100_revcomp.fasta")
+
+
+
+## make regions to search (+/- 20kbp)
+slop_bed <- bed_slop(bed, both = 2000, 
+                     genome,
+                     strand = TRUE)
+
+# trim slopped coords if past transcript
+slop_bed <- mutate(slop_bed, 
+                   start = ifelse(tx_start > start,
+                                  tx_start, 
+                                  start), 
+                   end = ifelse(tx_end < end,
+                                tx_end,
+                                end))
+
+seqs <- kentr::get_sequences(slop_bed, fasta)
+seqs <- mutate(seqs, header = str_c(site, header, sep = ":::"))
+kentr::write_fasta(seqs, "edits/folding/conserved_sites_bp2000.fasta")
+```
+
+
+## dinucleotide shuffle background
+  Meme has a python script for dinucleotide shuffling a fasta file. 
+  
+```{bash}
+if [ ! -s edits/folding/bp2000_dinucleotideshuffled.fasta ] ;
+  then
+    # split up into many files
+    
+    mkdir -p edits/folding/chunk
+    rm -f edits/folding/chunk*.fasta
+    cp edits/folding/bp2000.fasta edits/folding/chunk/
+    cd edits/folding/chunk/
+    
+    split -a 4 -l 100 bp2000.fasta output_
+    
+    ls output* | \
+    parallel -j 3 '/usr/local/opt/meme/bin/fasta-dinucleotide-shuffle  -f {} -t "_shuf" -s 42 > {}.fasta'
+    
+    cat output_*.fasta > bp2000_dinucleotideshuffled.fasta
+    mv bp2000_dinucleotideshuffled.fasta ../
+fi
+```
+## run blastn
+```{bash}
+
+function run_blastn {
+  rm tmp1.txt tmp2.txt $3 blastout.log.txt
+  nq=$(grep -c "^>" $1)
+  nr=$(grep -c "^>" $2)
+  
+  # check that the two fasta are the same length
+  if [ "$nq" != "$nr" ]; then
+    echo "fasta lengths are not the same"
+    exit 1
+  fi
+  
+  # iterate by twos and make single record fastas for pairwise blast
+  for ((i = 1; i <= $nq; i += 2))
+  do 
+    if [ $(( $i % 49 )) -eq 0 ]
+      then echo $i" records processed" >> blastout.log.txt 
+    fi
+    second=$(( $i + 1 ))
+    sed -n $i","$second"p" $1 > tmp1.txt
+    sed -n $i","$second"p" $2 > tmp2.txt
+    blastn -strand "plus" \
+      -word_size 7 \
+      -evalue "0.1" \
+      -outfmt 6 \
+      -query tmp1.txt \
+      -subject tmp2.txt >> $3
+  done
+  # word_size default in blastn via web 
+  # evalue 0.1 used by Jin Billy Li in Li et al., Science 2009
+  rm tmp1.txt tmp2.txt 
+}
+
+run_blastn edits/folding/bp100_revcomp.fasta \
+  edits/folding/bp2000.fasta \
+  edits/folding/blast_sig_sites_2000nt.txt
+ 
+run_blastn edits/folding/bp100.fasta \
+  edits/folding/bp2000.fasta \
+  edits/folding/blast_sig_revcomp_sites_2000nt.txt
+  
+run_blastn edits/folding/bp100_nonsig_revcomp.fasta \
+  edits/folding/bp2000_nonsig.fasta \
+  edits/folding/blast_nonsig_sites_2000nt.txt
+  
+run_blastn edits/folding/bp100_revcomp.fasta \
+  edits/folding/bp2000_dinucleotideshuffled.fasta \
+  edits/folding/blast_sig_shuffled_sites_2000nt.txt 
+  
+run_blastn edits/folding/conserved_sites_bp100_revcomp.fasta \
+  edits/folding/conserved_sites_bp2000.fasta \
+  edits/folding/blast_conserved_sites_2000nt.txt
+```
+
+
+
+## plot distribution
+```{r}
+blast_res <- read_tsv("edits/folding/blast_nonsig_sites_2000nt.txt", col_names = F)
+blast_res <- mutate(blast_res, 
+                    edit_pos = str_match(blast_res$X1, "::(\\d+)::")[, 2] %>% as.integer(),
+                    start = str_match(blast_res$X1, ":(\\d+)-")[, 2] %>% as.integer(),
+                    end = str_match(blast_res$X1, "-(\\d+)")[, 2] %>% as.integer(),
+                    rel_edit_pos = edit_pos - start - 1)
+
+overlapped <- filter(blast_res,
+                     X7 <= rel_edit_pos, 
+                     X8 >= rel_edit_pos)
+
+long <- filter(overlapped,
+               X4 >= 20)
+length(unique(long$X1))
+
+class2_count <- length(unique(long$X1))
+```
+
+```{r}
+blast_res <- read_tsv("edits/folding/blast_sig_sites_2000nt.txt", col_names = F)
+blast_res <- mutate(blast_res, 
+                    edit_pos = str_match(blast_res$X1, "::(\\d+)::")[, 2] %>% as.integer(),
+                    start = str_match(blast_res$X1, ":(\\d+)-")[, 2] %>% as.integer(),
+                    end = str_match(blast_res$X1, "-(\\d+)")[, 2] %>% as.integer(),
+                    rel_edit_pos = edit_pos - start - 1)
+
+overlapped <- filter(blast_res,
+                     X7 <= rel_edit_pos, 
+                     X8 >= rel_edit_pos)
+
+long <- filter(overlapped,
+               X4 >= 20)
+class1_count <- length(unique(long$X1))
+class1_count
+```
+
+```{r}
+blast_res <- read_tsv("edits/folding/blast_sig_shuffled_sites_2000nt.txt", col_names = F)
+blast_res <- mutate(blast_res, 
+                    edit_pos = str_match(blast_res$X1, "::(\\d+)::")[, 2] %>% as.integer(),
+                    start = str_match(blast_res$X1, ":(\\d+)-")[, 2] %>% as.integer(),
+                    end = str_match(blast_res$X1, "-(\\d+)")[, 2] %>% as.integer(),
+                    rel_edit_pos = edit_pos - start - 1)
+
+overlapped <- filter(blast_res,
+                     X7 <= rel_edit_pos, 
+                     X8 >= rel_edit_pos)
+
+long <- filter(overlapped,
+               X4 >= 20)
+length(unique(long$X1))
+shuffled_count <- length(unique(long$X1))
+```
+
+```{r}
+blast_res <- read_tsv("edits/folding/blast_sig_revcomp_sites_2000nt.txt", col_names = F)
+blast_res <- mutate(blast_res, 
+                    edit_pos = str_match(blast_res$X1, "::(\\d+)::")[, 2] %>% as.integer(),
+                    start = str_match(blast_res$X1, ":(\\d+)-")[, 2] %>% as.integer(),
+                    end = str_match(blast_res$X1, "-(\\d+)")[, 2] %>% as.integer(),
+                    rel_edit_pos = edit_pos - start - 1)
+
+overlapped <- filter(blast_res,
+                     X7 <= rel_edit_pos, 
+                     X8 >= rel_edit_pos)
+
+long <- filter(overlapped,
+               X4 >= 20)
+long <- filter(long, 
+               X7 != 1,
+               X8 != 201)
+length(unique(long$X1))
+
+rev_comp_count <- length(unique(long$X1))
+rev_comp_count
+
+```
+
+```{r plot_enrichment}
+
+cnts <- c(class1_count, 
+  class2_count,
+  shuffled_count,
+  rev_comp_count)
+
+descript <- c(
+  "Class I editing sites",
+  "Class II editing sites",
+  "Dinucleotide shuffled background",
+  "Reverse Complement of\nClass I sites regions"
+)
+
+blast_dat <- data_frame(counts = cnts,
+           description = factor(descript,
+                                levels = rev(descript)))
+ggplot(blast_dat, aes(description, counts)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  ylab("Number of edited regions with\nsignificant dsRNA character") +
+  xlab("")
+
+ggsave(file.path(figs_dir[3], "blastn_calc.pdf"), width = 6, height = 3)
+```
+## Run RNA fold
+
+
+```{bash}
+cat edits/folding/bp100.fasta | RNAfold --noPS > edits/folding/sig_folds.txt
+cat edits/folding/bp100_nonsig.fasta | RNAfold --noPS > edits/folding/nonsig_folds.txt
+```
+
+
+```{r}
+read_rnafold <- function(file_in) {
+  x <- read_lines(file_in)
+  x <- x[!startsWith(x, ">")]
+  x <- x[!stringi::stri_detect_regex(x, "[ATCUG]")]
+  x <- str_split(x, " ", simplify = T)[, 2]
+  x <- str_replace_all(x, "[\\(\\)]", "")
+  x <- as.numeric(x)
+  x 
+}
+
+sigfolds <- read_rnafold("edits/folding/sig_folds.txt")
+nonsigfolds <- read_rnafold("edits/folding/nonsig_folds.txt")
+folds <- list(data_frame(deltag = sigfolds), 
+              data_frame(deltag = nonsigfolds))
+names(folds) <- c("sig_edits", "non_sig_edits")
+folds <- bind_rows(folds, .id = "type")
+
+ggplot(folds, aes(deltag)) +
+  geom_density(aes(fill = type), alpha = 0.5)
+
+```
+
+```{r}
+convert_dot2char <- function(file_in) {
+  x <- read_lines(file_in)
+  header <- x[startsWith(x, ">")]
+  dots <- str_subset(x, "[()]")
+  energy <- str_split(dots, " ", simplify = T)[, 2]
+  dots <- str_split(dots, " ", simplify = T)[, 1]
+  seq <- str_subset(x, "^[ATCGUNatcgun]")
+  data_frame(header,
+             seq,
+             dots,
+             energy)
+}
+
+file_in <- "edits/folding/sig_folds.txt"
+convert_dot2char(file_in) -> a
+
+  a$dots -> dot 
+  dot %>% str_split("") -> dots
+
+find_stems <- function(rna_dot_vector, min_bps = 20){
+  max_bulge <- 8
+  current_bulge <- 0 
+  current_bp <- 0
+  n_stems <- 0
+  start <- 1
+  stems <- vector("list", length(dot_form))
+
+  for(i in seq_along(dot_form)){
+      if(dot_form[i] == "."){
+        if (current_bp == 0){
+        next
+      } else if (current_bulge == max_bulge){
+        #start new bp'ed section
+        stems[[n_stems]] <- c(start, i, current_bp)
+        current_bulge <- 0
+        current_bp <- 0
+      } else {
+        current_bulge <- current_bulge + 1
+      }
+    }
+    else if (dot_form[i] == "(") {
+      if (current_bp == 0){
+        # new bp'ed region
+        start <- i
+        n_stems <- n_stems + 1
+      }
+      current_bp = current_bp + 1
+    }
+  }
+  
+  stems <- stems[!map_lgl(stems, is.null)]
+  return(stems)
+}
+
+stems <- map(dots[1:3], ~find_stems(.x))
+long_stems <- stems[map_lgl(stems, ~.x[3] >= 20)]
+```
+
+## look for enriched motifs near editing sites
+```{r}
+dat <- read.table("edits/A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz",
+                header = T,
+                sep = "\t", stringsAsFactors = F) %>% as_data_frame()
+
+# make bed like file
+bed <- dplyr::select(dat, 
+              chrom,
+              start, #derived from bed file, zero based
+              end,
+              site,
+              kmeans_cluster, 
+              strand) %>% unique()
+
+# make simple annotation 
+colnames(gtf) <- c(
+  "chrom",
+  "start",
+  "end",
+  "name",
+  "score",
+  "strand",
+  "biotype", 
+  "denovo_gid", 
+  "denovo_tid", 
+  "gene_id", 
+  "transcript_id", 
+  "gene_name", 
+  "region")
+
+tx_gtf <- filter(gtf,
+                   region == "transcript")
+
+
+# drop editing sites near ends of chroms
+trimmed_bed <- bed_slop(bed, both = 100, genome, trim = F)
+
+# only keep intervals still present in trimmed bed
+bed <- bed %>% filter(site %in% trimmed_bed$site)
+
+# annotate with transcripts
+bed <- bed_intersect(group_by(bed, strand), group_by(tx_gtf, strand))
+
+# get min and max coords for txs
+bed <- group_by(bed, 
+                chrom, start.x, end.x, site.x, kmeans_cluster.x, 
+                strand.x) %>% 
+  summarize(tx_start = min(start.y), 
+            tx_end = max(end.y)) %>% 
+  dplyr::rename(chrom = chrom,
+         start = start.x,
+         end = end.x,
+         strand = strand.x,
+         site = site.x) 
+
+bed <- ungroup(bed)
+# +/- 100 nt
+flank_bed <- bed_flank(bed, both = 100, genome, 
+                     strand = TRUE)
+# trim slopped coords if past transcript
+flank_bed <- mutate(flank_bed, 
+                   start = ifelse(tx_start > start,
+                                  tx_start, 
+                                  start), 
+                   end = ifelse(tx_end < end,
+                                tx_end,
+                                end))
+
+seqs <- kentr::get_sequences(flank_bed, fasta)
+seqs <- filter(seqs, !duplicated(header),
+               nchar(seq) > 75)
+kentr::write_fasta(seqs, "edits/folding/flank_bp100.fasta")
+
+```
+
+
+```{bash, eval = F}
+# execute on tesla
+meme="/usr/local/opt/meme/bin/meme"
+$meme \
+  -oc 100bp_flank_motif -dna -mod zoops \
+  -nmotifs 1 \
+  -minw 6 \
+  -maxw 8 \
+  -p 2 \
+  -maxsize 10000000 \
+  edits/folding/flank_bp100.fasta
+```
+

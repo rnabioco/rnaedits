@@ -1,0 +1,1008 @@
+---
+title: "Genomic Distribution"
+author: "Kent Riemondy RBI"
+date: "11/2/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+```{r ,message=FALSE, warning=FALSE, cache = F}
+source("globals.R")
+library(scales)
+```
+
+
+```{r get_sites}
+dat <- read.table("edits/A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz",
+                header = T,
+                sep = "\t", stringsAsFactors = F) %>% as_data_frame()
+dat <- dplyr::filter(dat, 
+                       kmeans_cluster == 1)
+                     
+hyper <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation_kmeans.txt.gz")
+hyper <- dplyr::filter(hyper, 
+                       FDR < 0.01,
+                       kmeans_cluster != 3)
+
+edits <- list(dat, hyper)
+names(edits) <- c("GATK", "Hyperediting")
+edits <- bind_rows(edits, .id = "pipeline")
+
+# annotate if found in both
+
+edits %>% 
+  dplyr::select(chrom, start, strand, pipeline) %>% 
+  unique() %>% 
+  dplyr::group_by(chrom, start, strand) %>% 
+  mutate(sites = n(),
+         pipeline = ifelse(sites > 1,
+                           "both",
+                           pipeline)) %>% 
+  ungroup() -> pipeline_used
+
+edits <- left_join(edits, pipeline_used,
+                   by = c("chrom", "start", "strand")) %>% 
+  mutate(pipeline = ifelse(pipeline.y == "both",
+                           "both",
+                           pipeline.x)) %>% 
+  dplyr::select(-sites, -pipeline.x, -pipeline.y) %>% 
+  unique()
+
+
+# make bed like file for sig sites
+sig_bed <- dplyr::select(edits,
+              chrom,
+              start, #derived from bed file, zero based
+              end,
+              site,
+              strand) %>% 
+  unique()
+```
+
+```{r nonsig_sites}
+## also generate a set of intervals from non-significant sites
+
+hyper_edits <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation_kmeans.txt.gz")
+hyper_edits_non_sig <- hyper_edits %>% 
+  dplyr::filter(FDR > 0.50)
+
+gatk_non_sigsites <- read_tsv("edits/A_G_filtered_notsignificant_sites_annotation_kmeans.txt.gz")
+gatk_non_sigsites <- gatk_non_sigsites %>%
+  dplyr::filter(FDR > 0.50) %>% 
+  dplyr::select(chrom, start, end, 
+                strand, site, EFF, FDR, 
+                GeneName:ANNOTATED) %>% 
+  unique()
+
+shared_sites <- semi_join(hyper_edits_non_sig, gatk_non_sigsites, 
+                           by = c("site"))
+shared_sites <- dplyr::filter(shared_sites, !site %in% sig_bed$site)
+# make bed like file
+nonsig_bed <- dplyr::mutate(shared_sites, score = 0) %>% 
+              dplyr::select( chrom,
+              start,
+              end,
+              site,
+              strand) %>% 
+  unique()
+
+
+```
+
+```{r valr}
+bed <- read_tsv(file.path(db_dir, "ensembl85", "Ictidomys_tridecemlineatus.spetri2.85.bed.gz"),
+                col_names = F)
+colnames(bed) <- c("chrom", "start", "end", "name", "score", "strand", 
+                   "geneid", "biotype", "transcript", "genename",
+                   "exon_count", "feature")
+
+stringtietaco <- read_tsv("mrna/fixed_all95.bed.gz", col_names = F)
+colnames(stringtietaco) <-  c("chrom", "start", "end", "name", "score", "strand",
+                              "biotype", "denovo_gid", 
+                                       "denovo_tid", "geneid", 
+                                       "transcript", "genename", "feature")
+
+# convert transcriptids to novel ids from stringtie if not assinged 
+# same for gene ids
+# also drop novel ids and reorder to match ensembl
+stringtietaco <- mutate(stringtietaco, 
+                        geneid = ifelse(is.na(geneid),
+                                        denovo_gid,
+                                        geneid),
+                        transcript = ifelse(is.na(transcript),
+                                            denovo_tid,
+                                            transcript)) %>% 
+  dplyr::select(-denovo_gid, -denovo_tid) %>% 
+  dplyr::select(chrom:strand, geneid, biotype, transcript,
+                genename, feature)
+
+# add in exon count field
+n_exon <- dplyr::group_by(stringtietaco, transcript) %>% 
+  dplyr::filter(feature == "exon") %>% 
+  summarize(exon_count = n())
+
+stringtietaco <- left_join(stringtietaco, n_exon, by = "transcript") %>% 
+  dplyr::select(-feature, everything(), feature)
+
+bed <- bind_rows(bed, stringtietaco) %>% unique()
+
+# now add in 3' and 5' utr annotations (for novel exons in known transcripts with CDS annotations in ensembl)
+
+bed %>% 
+  group_by(transcript) %>% 
+  mutate(coding = any(feature == "CDS")) -> bed
+
+# determine min and max of CDS per transcript
+bed %>% 
+  dplyr::filter(str_detect(feature, "CDS|start_codon")) %>% 
+  group_by(transcript) %>% 
+  summarize(cds_start = min(start),
+         cds_end = max(end)) -> cds_bed
+
+bed <- left_join(bed, 
+                 cds_bed, by = "transcript")
+
+classify_utrs <- function(start, end, strand, cds_min, cds_max){
+
+  if (strand == "+"){
+    if (end <= cds_min){   # handles first exons spliced prior to CDS
+      return("five_prime_utr")
+    } else if (start > cds_min & end <= cds_min){   # handles first exons spliced prior to CDS
+      return("five_prime_utr_first_cds_exon")
+    } else if (start > cds_max) {
+      return("three_prime_utr")
+    } else if (start <= cds_max & end > cds_max) {
+      return("three_prime_utr_last_cds_exon")
+    } else {
+      return("overlapping_cds")
+    }
+  } else {
+     if (end <= cds_min){
+      return("three_prime_utr")
+    } else if (end > cds_min & start <= cds_min){   
+      return("three_prime_utr_last_cds_exon")
+    } else if (start > cds_max) {
+      return("five_prime_utr")
+    } else if (start <= cds_max & end > cds_max) {
+      return("five_prime_utr_first_cds_exon")
+    } else {
+      return("overlapping_cds")
+    }
+  }
+}
+
+# classify exons into 5', 3' UTR, or overlapping CDS
+bed %>% 
+  dplyr::filter(feature == "exon",
+                coding == TRUE) %>% 
+  dplyr::rowwise() %>% 
+  mutate(utr_classification = classify_utrs(start, end, strand, 
+                                            cds_start, cds_end)) -> tmp_bed
+
+# adjust starts and ends for 5' and 3' utr features overlapping cds exons
+tmp_bed %>% 
+  ungroup() %>% 
+  mutate(end = ifelse(utr_classification == "five_prime_utr_first_cds_exon" & strand == "+" |
+                        utr_classification == "three_prime_utr_last_cds_exon" & strand == "-",
+                      cds_start,
+                      end),
+         start = ifelse(utr_classification == "five_prime_utr_first_cds_exon" & strand == "-" |
+                        utr_classification == "three_prime_utr_last_cds_exon" & strand == "+",
+                      cds_end,
+                      start),
+         utr_classification = ifelse(utr_classification == "five_prime_utr_first_cds_exon",
+                                     "five_prime_utr",
+                                     ifelse(utr_classification == "three_prime_utr_last_cds_exon",
+                                            "three_prime_utr",
+                                            utr_classification))) -> tmp_bed
+``` 
+
+```{r exon_classify}        
+# classify overlapping cds exons as true CDS, novel standalone exons or IR events
+
+
+classify_exons <- function(df){
+  overlap_cds_exons <- dplyr::filter(df, utr_classification == "overlapping_cds") %>% 
+    dplyr::select(chrom, start, end) %>% 
+    unique()
+  
+  if(nrow(overlap_cds_exons) == 0){
+    return(df)
+  }
+  
+  other_exons <- dplyr::filter(df, feature == "CDS") %>% 
+    dplyr::select(chrom, start, end) %>% 
+    unique()
+    
+  new_cds_exons <- anti_join(overlap_cds_exons,
+                             other_exons,
+                             by = c("chrom", "start", "end"))
+  
+  if (nrow(new_cds_exons) == 0){
+    return(df)
+  }
+  
+  cds_exons <- dplyr::filter(df, feature == "CDS") %>% 
+    dplyr::select(chrom, start, end) %>% 
+    bed_merge()
+  
+  bed_map(new_cds_exons, 
+          cds_exons, 
+          count = n()) %>% 
+    dplyr::filter(count > 1) %>% 
+    mutate(modify = "yes") -> retained_introns
+  
+  res <- left_join(df, retained_introns, 
+                   by = c("chrom", "start", "end")) %>% 
+    mutate(feature = ifelse(is.na(modify), 
+                            feature, 
+                            ifelse(modify == "yes", 
+                                   "retained_intron", NA))) %>% 
+    dplyr::select(-modify, -count)
+  
+  return(res)
+}
+
+
+bed <- dplyr::filter(bed, !(feature == "exon" &  coding == TRUE)) %>% 
+  bind_rows(., tmp_bed) %>% 
+  unique() %>% 
+  dplyr::arrange(chrom, start)
+
+bed %>% 
+  ungroup() %>% 
+  nest(-geneid) -> beds
+
+n = 7  #number of clusters
+library(foreach)
+library(doParallel)
+registerDoParallel(n)
+ris <- foreach(i = split(beds, 1:3), 
+              .combine = rbind,
+              .packages = c("dplyr", "purrr"), 
+              .export = c("classify_exons"))  %dopar% {
+  dplyr::mutate(i, retained_introns = purrr::map(data, ~classify_exons(.x)))
+              }
+
+ris %>% 
+  dplyr::select(geneid, retained_introns) %>%
+  unnest() %>% 
+  ungroup() -> bed
+
+og_bed <- bed
+bed <- dplyr::select(bed, chrom:utr_classification, geneid)
+```
+
+
+```{r generate_annotation}
+
+sig_bed <- group_by(sig_bed, strand)
+bed <- group_by(bed, strand)
+tmp_bed <- bed_intersect(sig_bed, bed)
+not_bed <- bed_intersect(sig_bed, bed, 
+                         invert = T)
+
+features_bed <- bind_rows(tmp_bed, not_bed)
+
+#replace site.x col with site col after binding up non-intersecting sites
+features_bed <- mutate(features_bed, site.x = ifelse(!is.na(site),
+                                            site,
+                                            site.x))
+features_bed <- features_bed %>% 
+  group_by(site.x) %>% 
+  summarize(features = paste0(unique(feature.y), collapse = ","), 
+            genes = paste0(unique(geneid.y), collapse = ","),
+            utr = paste0(unique(utr_classification.y), collapse = ","),
+            coding = paste0(unique(coding.y), collapse = ","),
+            biotype = paste0(unique(biotype.y), collapse = ","))
+
+features_bed <-  features_bed %>% 
+  mutate(features = paste0(features, ",", utr, sep =","), 
+         features = str_split(features, ",") %>% 
+           map(., unique) %>% 
+           map_chr(., ~paste0(.x, collapse = ","))) 
+
+best_bed <- mutate(features_bed, 
+                   best_features = ifelse(str_detect(features, 
+                                                     "CDS"), 
+                                          "CDS",
+                                     ifelse(str_detect(features,
+                                                       "three_prime_utr"),
+                                            "3'UTR",
+                                            ifelse(str_detect(features, 
+                                                              "five_prime_utr"), 
+                                                   "5'UTR", 
+                                                   ifelse(str_detect(features, 
+                                                                     "start_codon"),
+                                                          "CDS", 
+                                                          ifelse(str_detect(features, 
+                                                                            "stop_codon"), 
+                                                                 "CDS", 
+                                                                 ifelse(str_detect(features, 
+                                                                                   "exon") & (str_detect(utr,
+                                                                                                        "overlapping_cds") | 
+                                                                                                str_detect(coding, "TRUE")), 
+                                                                        "Novel\nmRNA\nexon",
+                                                                        ifelse(str_detect(features, 
+                                                                                   "retained_intron"),  
+                                                                        "Intron",
+                                                                        ifelse(str_detect(biotype, "miRNA|misc_RNA|rRNA|snRNA|snoRNA"), 
+                                                                               "ncRNA",
+                                                                        ifelse(str_detect(features, 
+                                                                                   "exon")  & !str_detect(utr,
+                                                                                                        "overlapping_cds"),
+                                                                               "Novel\nncRNA\nexon",
+                                                                 ifelse(str_detect(features, 
+                                                                                   "gene|transcript"), 
+                                                                        "Intron",
+                                                                        "Intergenic"))))))))))) 
+                                                                                                               
+summary_bed <- best_bed %>% 
+  group_by(best_features) %>% 
+  summarize(totals = n())
+
+p <- ggplot(summary_bed, aes(best_features, totals)) +
+  geom_bar(stat = "identity") +
+  ylab("Number of Significant Sites") +
+  theme(
+    axis.title.x = element_blank()
+  )
+p
+```
+
+
+There are `r (summary_bed[summary_bed$best_features == "Intergenic", "totals"] + summary_bed[summary_bed$best_features == "Intron", "totals"]) / sum(summary_bed$totals) * 100` percent intronic or intergenic alignments.
+
+### repeat distribution
+
+```{r analyze_repeats}
+rpts_bed_ensembl <- read_tsv(file.path(db_dir, "ensembl85", "ensembl85_rmsk.bed.gz"))
+
+new_chroms <- str_replace(sig_bed$chrom, ".1$", "")
+sig_bed_ucsc <- sig_bed %>% ungroup()
+sig_bed_ucsc$chrom <- new_chroms
+
+# strand specific intersection doesn't make sense for repeat seqs...
+#sig_bed_ucsc <- group_by(sig_bed_ucsc, strand)
+#rpts_bed_ensembl <- group_by(rpts_bed_ensembl, strand)
+
+rpt_bed <- bed_intersect(sig_bed_ucsc,
+                         rpts_bed_ensembl)
+non_rpt_bed <- bed_intersect(sig_bed_ucsc, 
+                             rpts_bed_ensembl, invert = T)
+
+rpt_bed <- rpt_bed %>% 
+  dplyr::select(site.x, name.y, class.y) %>% 
+  mutate(repeat_found = "repeat")
+
+non_rpt_bed <- non_rpt_bed %>%  dplyr::select(site) %>% 
+  mutate(repeat_found = "non-repeat", name.y = "none", 
+         class.y = "none", site.x = site) %>%
+  dplyr::select(-site, site.x, name.y, 
+                class.y, repeat_found)
+
+sig_rpt_bed <- bind_rows(rpt_bed, non_rpt_bed)
+
+rpt_bed <- sig_rpt_bed
+rpt_bed <- rpt_bed %>% 
+  group_by(site.x) %>%  
+  summarize(repeat_names = valr::values_unique(name.y), 
+            repeat_classes = valr::values_unique(class.y),
+            repeat_present = first(repeat_found))
+```
+
+```{r rpt_bed_annotated}
+#annotate with best_bed from above
+rpt_bed_annotated <- left_join(rpt_bed, best_bed)                                                                                              
+# add in a total factor
+tmp <- rpt_bed_annotated %>% mutate(best_features = "Total")
+rpt_bed_annotated <- bind_rows(rpt_bed_annotated, tmp)
+
+# add in totals for text
+rpt_txt <- rpt_bed_annotated %>% 
+  group_by(best_features) %>% 
+  summarize(total_n = paste0("n = ", 
+                             formatC(n(), big.mark = ",")))
+
+rpt_bed_annotated <- mutate(rpt_bed_annotated, 
+                  best_features = factor(best_features, 
+                                                  levels = c("Total",
+                                                             "Intron",
+                                                             "Intergenic",
+                                                             "CDS",
+                                                             "5'UTR",
+                                                             "3'UTR",
+                                                             "Novel\nmRNA\nexon",
+                                                             "Novel\nncRNA\nexon",
+                                                             "ncRNA")),
+                  repeat_present = factor(repeat_present,
+                                          levels = c("repeat", "non-repeat")))
+
+
+sig_plt <- ggplot(rpt_bed_annotated, aes(best_features)) +
+  geom_bar(aes(fill = repeat_present), 
+           position = "fill",
+           color="black") +
+  geom_text(data = rpt_txt, 
+            aes(best_features, 0.8, label = total_n),
+            angle = 90,
+            size = 5) +
+  ylab("Proportion of editing sites") +
+  scale_fill_manual(values = c("#D9D9D9", "#525252")) +
+  theme(
+    axis.title.x = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "top"
+  )
+sig_plt
+
+save_plot("hyperedits/sig_repeat_distribution.pdf", sig_plt, base_width = 6)
+
+rpt_bed_annotated  %>% 
+   dplyr::filter(best_features != "Total") %>% 
+   group_by(repeat_present) %>% 
+   summarize(n = n()) %>% 
+   ungroup() %>% 
+   mutate(total = sum(n),
+          percent = (n / total) * 100)
+```
+
+
+```{r}
+
+rpt_bed %>%  
+  filter(repeat_present == "repeat") %>% 
+  dplyr::select(site.x:repeat_present) %>% 
+  unique() -> rpt_summary
+
+# summarize by repeat class
+rpt_summary %>% 
+  group_by(repeat_classes) %>% 
+  summarize(total_repeat_classes = n()) %>%
+  arrange(desc(total_repeat_classes)) -> rpt_summary
+
+rpt_summary
+
+# summarize all repeat categorys less than top 15 as other
+minor_repeat_count <- sum(rpt_summary[7:nrow(rpt_summary), ]$total_repeat_classes)
+minor_rpts <- data_frame(repeat_classes = "Other",
+                         total_repeat_classes = minor_repeat_count)
+
+res <- bind_rows(rpt_summary[1:6, ], minor_rpts)
+res <- mutate(res, 
+              repeat_classes = factor(repeat_classes,
+                                      level = rev(repeat_classes)))
+
+a <- ggplot(res, aes(repeat_classes, total_repeat_classes)) +
+  geom_bar( stat = "identity") +
+  xlab("Repeat Class") +
+  ylab("Number of A-to-I\nediting sites") +
+  coord_flip() + 
+  scale_fill_manual(values = color_fxn(12)) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "none"
+  )
+
+# summarize by repeat name
+rpt_bed %>%  
+  filter(repeat_present == "repeat") %>% 
+  dplyr::select(site.x:repeat_present) %>% 
+  unique() -> rpt_summary
+
+rpt_summary %>% 
+  group_by(repeat_names) %>% 
+  summarize(total_repeat_classes = n()) %>%
+  arrange(desc(total_repeat_classes)) -> rpt_summary
+
+rpt_summary
+
+# summarize all repeat categorys less than top 15 as other
+minor_repeat_count <- sum(rpt_summary[15:nrow(rpt_summary), ]$total_repeat_classes)
+minor_rpts <- data_frame(repeat_names = "Other",
+                         total_repeat_classes = minor_repeat_count)
+
+res <- bind_rows(rpt_summary[1:16, ], minor_rpts)
+res <- mutate(res, 
+              repeat_names = factor(repeat_names,
+                                      level = rev(repeat_names)))
+b <- ggplot(res, aes(repeat_names, total_repeat_classes)) +
+  geom_bar( stat = "identity") +
+  xlab("Repeat Name") +
+  ylab("Number of A-to-I\nediting sites") +
+  coord_flip() + 
+  scale_fill_manual(values = color_fxn(12)) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "none"
+  )
+
+b
+plt <- plot_grid(a, b, rel_widths = c(1, 1.1))
+save_plot("hyperedits/sig_repeat_classification.pdf", plt, base_width = 8)
+# fig 3
+#file.copy("edits/repeat_classification.pdf", figs_dir[3], overwrite = T)
+```
+
+## Examine non-sig distribution
+
+```{r generate_annotation_nonsig}
+
+nonsig_bed <- group_by(nonsig_bed, strand)
+tmp_bed <- bed_intersect(nonsig_bed, bed)
+not_bed <- bed_intersect(nonsig_bed, bed, 
+                         invert = T)
+
+features_bed <- bind_rows(tmp_bed, not_bed)
+
+#replace site.x col with site col after binding up non-intersecting sites
+features_bed <- mutate(features_bed, site.x = ifelse(!is.na(site),
+                                            site,
+                                            site.x))
+features_bed <- features_bed %>% 
+  group_by(site.x) %>% 
+  summarize(features = paste0(unique(feature.y), collapse = ","), 
+            genes = paste0(unique(geneid.y), collapse = ","),
+            utr = paste0(unique(utr_classification.y), collapse = ","),
+            coding = paste0(unique(coding.y), collapse = ","),
+            biotype = paste0(unique(biotype.y), collapse = ","))
+
+features_bed <-  features_bed %>% 
+  mutate(features = paste0(features, ",", utr, sep =","), 
+         features = str_split(features, ",") %>% 
+           map(., unique) %>% 
+           map_chr(., ~paste0(.x, collapse = ","))) 
+
+best_bed <- mutate(features_bed, 
+                   best_features = ifelse(str_detect(features, 
+                                                     "CDS"), 
+                                          "CDS",
+                                     ifelse(str_detect(features,
+                                                       "three_prime_utr"),
+                                            "3'UTR",
+                                            ifelse(str_detect(features, 
+                                                              "five_prime_utr"), 
+                                                   "5'UTR", 
+                                                   ifelse(str_detect(features, 
+                                                                     "start_codon"),
+                                                          "CDS", 
+                                                          ifelse(str_detect(features, 
+                                                                            "stop_codon"), 
+                                                                 "CDS", 
+                                                                 ifelse(str_detect(features, 
+                                                                                   "exon") & (str_detect(utr,
+                                                                                                        "overlapping_cds") | 
+                                                                                                str_detect(coding, "TRUE")), 
+                                                                        "Novel\nmRNA\nexon",
+                                                                        ifelse(str_detect(features, 
+                                                                                   "retained_intron"),  
+                                                                        "Intron",
+                                                                        ifelse(str_detect(biotype, "miRNA|misc_RNA|rRNA|snRNA|snoRNA"), 
+                                                                               "ncRNA",
+                                                                        ifelse(str_detect(features, 
+                                                                                   "exon")  & !str_detect(utr,
+                                                                                                        "overlapping_cds"),
+                                                                               "Novel\nncRNA\nexon",
+                                                                 ifelse(str_detect(features, 
+                                                                                   "gene|transcript"), 
+                                                                        "Intron",
+                                                                        "Intergenic"))))))))))) 
+                                                                                                               
+summary_bed <- best_bed %>% 
+  group_by(best_features) %>%  
+  summarize(totals = n())
+
+p <- ggplot(summary_bed, aes(best_features, totals)) +
+  geom_bar(stat = "identity") +
+  ylab("Number of Significant Sites") +
+  theme(
+    axis.title.x = element_blank()
+  )
+p
+```
+
+### nonsig repeat distribution
+
+```{r analyze_repeats_nonsig}
+rpts_bed_ensembl <- read_tsv(file.path(db_dir, "ensembl85", "ensembl85_rmsk.bed.gz"))
+
+new_chroms <- str_replace(nonsig_bed$chrom, ".1$", "")
+sig_bed_ucsc <- nonsig_bed %>% ungroup()
+sig_bed_ucsc$chrom <- new_chroms
+rpt_bed <- bed_intersect(sig_bed_ucsc, rpts_bed_ensembl)
+non_rpt_bed <- bed_intersect(sig_bed_ucsc, rpts_bed_ensembl, invert = T)
+
+rpt_bed <- rpt_bed %>% 
+  dplyr::select(site.x, name.y, class.y) %>% 
+  mutate(repeat_found = "repeat")
+
+non_rpt_bed <- non_rpt_bed %>%  
+  dplyr::select(site) %>% 
+  mutate(repeat_found = "non-repeat", name.y = "none", class.y = "none", site.x = site) %>%
+  dplyr::select(-site, site.x, name.y, class.y, repeat_found)
+
+nonsig_rpt_bed <- bind_rows(rpt_bed, non_rpt_bed)
+rpt_bed <- nonsig_rpt_bed
+
+rpt_bed <- rpt_bed %>% 
+  group_by(site.x) %>%  
+  summarize(repeat_names = valr::values_unique(name.y), 
+            repeat_classes = valr::values_unique(class.y),
+            repeat_present = first(repeat_found))
+
+#annotate with best_bed from above
+rpt_bed <- left_join(rpt_bed, best_bed)                                                                                              
+# add in a total factor
+tmp <- rpt_bed %>% mutate(best_features = "Total")
+rpt_bed <- bind_rows(rpt_bed, tmp)
+
+# add in totals for text
+rpt_txt <- rpt_bed %>% 
+  group_by(best_features) %>% 
+  summarize(total_n = paste0("n = ", 
+                             formatC(n(), big.mark = ",")))
+
+rpt_bed <- mutate(rpt_bed, 
+                  best_features = factor(best_features, 
+                                                  levels = c("Total",
+                                                             "Intron",
+                                                             "Intergenic",
+                                                             "CDS",
+                                                             "5'UTR",
+                                                             "3'UTR",
+                                                             "Novel\nmRNA\nexon",
+                                                             "Novel\nncRNA\nexon",
+                                                             "ncRNA")),
+                  repeat_present = factor(repeat_present,
+                                          levels = c("repeat", "non-repeat")))
+
+p <- ggplot(rpt_bed, aes(best_features)) +
+  geom_bar(aes(fill = repeat_present), 
+           position = "fill",
+           color="black") +
+  geom_text(data = rpt_txt, 
+            aes(best_features, 0.8, label = total_n),
+            angle = 90,
+            size = 5) +
+  ylab("Proportion of editing sites") +
+  scale_fill_manual(values = c("#D9D9D9", "#525252")) +
+  theme(
+    axis.title.x = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "top"
+  )
+p
+
+save_plot("hyperedits/nonsig_repeat_distribution.pdf", p, base_width = 6.25)
+```
+
+```{r}
+
+rpt_bed %>%  
+  filter(repeat_present == "repeat") %>% 
+  dplyr::select(site.x:repeat_present) %>% 
+  unique() -> rpt_summary
+
+rpt_bed %>% 
+  filter(best_features != "Total") %>% 
+  count(repeat_present) %>% 
+  mutate(total = sum(n), percent = 100 * (n / total))
+
+# summarize by repeat class
+rpt_summary %>% 
+  group_by(repeat_classes) %>% 
+  summarize(total_repeat_classes = n()) %>%
+  arrange(desc(total_repeat_classes)) -> rpt_summary
+
+rpt_summary
+
+# summarize all repeat categorys less than top 15 as other
+minor_repeat_count <- sum(rpt_summary[7:nrow(rpt_summary), ]$total_repeat_classes)
+minor_rpts <- data_frame(repeat_classes = "Other",
+                         total_repeat_classes = minor_repeat_count)
+
+res <- bind_rows(rpt_summary[1:6, ], minor_rpts)
+res <- mutate(res, 
+              repeat_classes = factor(repeat_classes,
+                                      level = rev(repeat_classes)))
+
+a <- ggplot(res, aes(repeat_classes, total_repeat_classes)) +
+  geom_bar( stat = "identity") +
+  xlab("Repeat Class") +
+  ylab("Number of A-to-I\nediting sites") +
+  coord_flip() + 
+  scale_fill_manual(values = color_fxn(12)) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "none"
+  )
+
+# summarize by repeat name
+rpt_bed %>%  
+  filter(repeat_present == "repeat") %>% 
+  dplyr::select(site.x:repeat_present) %>% 
+  unique() -> rpt_summary
+
+rpt_summary %>% 
+  group_by(repeat_names) %>% 
+  summarize(total_repeat_classes = n()) %>%
+  arrange(desc(total_repeat_classes)) -> rpt_summary
+
+rpt_summary
+
+# summarize all repeat categorys less than top 15 as other
+minor_repeat_count <- sum(rpt_summary[15:nrow(rpt_summary), ]$total_repeat_classes)
+minor_rpts <- data_frame(repeat_names = "Other",
+                         total_repeat_classes = minor_repeat_count)
+
+res <- bind_rows(rpt_summary[1:16, ], minor_rpts)
+res <- mutate(res, 
+              repeat_names = factor(repeat_names,
+                                      level = rev(repeat_names)))
+b <- ggplot(res, aes(repeat_names, total_repeat_classes)) +
+  geom_bar( stat = "identity") +
+  xlab("Repeat Name") +
+  ylab("Number of A-to-I\nediting sites") +
+  coord_flip(ylim = c(0, 4500)) + 
+  #scale_fill_manual(values = color_fxn(12)) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "none"
+  )
+
+b
+plt <- plot_grid(a, b, rel_widths = c(1, 1.1))
+save_plot("hyperedits/nonsig_repeat_classification.pdf", plt, base_width = 8.2)
+# fig 3
+#file.copy("edits/repeat_classification.pdf", figs_dir[3], overwrite = T)
+```
+
+
+## examine seasonally variable sites
+
+```{r seasonal}
+
+dat <- read_tsv("edits/winter-warm_v_summer-warm_edits/sig_site_annotation.txt")
+
+# make bed like file for sig sites
+seasonal_bed <- dplyr::select(dat,
+              chrom,
+              start, #derived from bed file, zero based
+              end,
+              site,
+              strand) %>% 
+  unique()
+```
+
+
+```{r generate_annotation_seasonal}
+
+seasonal_bed <- group_by(seasonal_bed, strand)
+tmp_bed <- bed_intersect(seasonal_bed, bed)
+not_bed <- bed_intersect(seasonal_bed, bed, 
+                         invert = T)
+
+features_bed <- bind_rows(tmp_bed, not_bed)
+
+#replace site.x col with site col after binding up non-intersecting sites
+features_bed <- mutate(features_bed, site.x = ifelse(!is.na(site),
+                                            site,
+                                            site.x))
+features_bed <- features_bed %>% 
+  group_by(site.x) %>% 
+  summarize(features = paste0(unique(feature.y), collapse = ","), 
+            genes = paste0(unique(geneid.y), collapse = ","),
+            utr = paste0(unique(utr_classification.y), collapse = ","),
+            coding = paste0(unique(coding.y), collapse = ","),
+            biotype = paste0(unique(biotype.y), collapse = ","))
+
+features_bed <-  features_bed %>% 
+  mutate(features = paste0(features, ",", utr, sep =","), 
+         features = str_split(features, ",") %>% 
+           map(., unique) %>% 
+           map_chr(., ~paste0(.x, collapse = ","))) 
+
+best_bed <- mutate(features_bed, 
+                   best_features = ifelse(str_detect(features, 
+                                                     "CDS"), 
+                                          "CDS",
+                                     ifelse(str_detect(features,
+                                                       "three_prime_utr"),
+                                            "3'UTR",
+                                            ifelse(str_detect(features, 
+                                                              "five_prime_utr"), 
+                                                   "5'UTR", 
+                                                   ifelse(str_detect(features, 
+                                                                     "start_codon"),
+                                                          "CDS", 
+                                                          ifelse(str_detect(features, 
+                                                                            "stop_codon"), 
+                                                                 "CDS", 
+                                                                 ifelse(str_detect(features, 
+                                                                                   "exon") & (str_detect(utr,
+                                                                                                        "overlapping_cds") | 
+                                                                                                str_detect(coding, "TRUE")), 
+                                                                        "Novel\nmRNA\nexon",
+                                                                        ifelse(str_detect(features, 
+                                                                                   "retained_intron"),  
+                                                                        "Intron",
+                                                                        ifelse(str_detect(biotype, "miRNA|misc_RNA|rRNA|snRNA|snoRNA"), 
+                                                                               "ncRNA",
+                                                                        ifelse(str_detect(features, 
+                                                                                   "exon")  & !str_detect(utr,
+                                                                                                        "overlapping_cds"),
+                                                                               "Novel\nncRNA\nexon",
+                                                                 ifelse(str_detect(features, 
+                                                                                   "gene|transcript"), 
+                                                                        "Intron",
+                                                                        "Intergenic"))))))))))) 
+                                                                                                               
+summary_bed <- best_bed %>% 
+  group_by(best_features) %>%  
+  summarize(totals = n())
+
+p <- ggplot(summary_bed, aes(best_features, totals)) +
+  geom_bar(stat = "identity") +
+  ylab("Number of Significant Sites") +
+  theme(
+    axis.title.x = element_blank()
+  )
+p
+```
+
+### seasonal repeat distribution
+
+```{r analyze_repeats_seasonal}
+rpts_bed_ensembl <- read_tsv(file.path(db_dir, "ensembl85", "ensembl85_rmsk.bed.gz"))
+
+new_chroms <- str_replace(seasonal_bed$chrom, ".1$", "")
+sig_bed_ucsc <- seasonal_bed %>% ungroup()
+sig_bed_ucsc$chrom <- new_chroms
+rpt_bed <- bed_intersect(sig_bed_ucsc, rpts_bed_ensembl)
+non_rpt_bed <- bed_intersect(sig_bed_ucsc, rpts_bed_ensembl, invert = T)
+
+rpt_bed <- rpt_bed %>% 
+  dplyr::select(site.x, name.y, class.y) %>% 
+  mutate(repeat_found = "repeat")
+
+non_rpt_bed <- non_rpt_bed %>%  
+  dplyr::select(site) %>% 
+  mutate(repeat_found = "non-repeat", name.y = "none", class.y = "none", site.x = site) %>%
+  dplyr::select(-site, site.x, name.y, class.y, repeat_found)
+
+nonsig_rpt_bed <- bind_rows(rpt_bed, non_rpt_bed)
+rpt_bed <- nonsig_rpt_bed
+
+rpt_bed <- rpt_bed %>% 
+  group_by(site.x) %>%  
+  summarize(repeat_names = valr::values_unique(name.y), 
+            repeat_classes = valr::values_unique(class.y),
+            repeat_present = first(repeat_found))
+
+#annotate with best_bed from above
+rpt_bed <- left_join(rpt_bed, best_bed)                                                                                              
+# add in a total factor
+tmp <- rpt_bed %>% mutate(best_features = "Total")
+rpt_bed <- bind_rows(rpt_bed, tmp)
+
+# add in totals for text
+rpt_txt <- rpt_bed %>% 
+  group_by(best_features) %>% 
+  summarize(total_n = paste0("n = ", 
+                             formatC(n(), big.mark = ",")))
+
+rpt_bed <- mutate(rpt_bed, 
+                  best_features = factor(best_features, 
+                                                  levels = c("Total",
+                                                             "Intron",
+                                                             "Intergenic",
+                                                             "CDS",
+                                                             "5'UTR",
+                                                             "3'UTR",
+                                                             "Novel\nmRNA\nexon",
+                                                             "Novel\nncRNA\nexon",
+                                                             "ncRNA")),
+                  repeat_present = factor(repeat_present,
+                                          levels = c("repeat", "non-repeat")))
+
+p <- ggplot(rpt_bed, aes(best_features)) +
+  geom_bar(aes(fill = repeat_present), 
+           position = "fill",
+           color="black") +
+  geom_text(data = rpt_txt, 
+            aes(best_features, 0.8, label = total_n),
+            angle = 90,
+            size = 5) +
+  ylab("Proportion of editing sites") +
+  scale_fill_manual(values = c("#D9D9D9", "#525252")) +
+  theme(
+    axis.title.x = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "top"
+  )
+p
+
+save_plot("hyperedits/seasonal_repeat_distribution.pdf", p, base_width = 6)
+```
+
+```{r}
+
+rpt_bed %>%  
+  filter(repeat_present == "repeat") %>% 
+  dplyr::select(site.x:repeat_present) %>% 
+  unique() -> rpt_summary
+
+# summarize by repeat class
+rpt_summary %>% 
+  group_by(repeat_classes) %>% 
+  summarize(total_repeat_classes = n()) %>%
+  arrange(desc(total_repeat_classes)) -> rpt_summary
+
+rpt_summary
+
+# summarize all repeat categorys less than top 15 as other
+minor_repeat_count <- sum(rpt_summary[7:nrow(rpt_summary), ]$total_repeat_classes)
+minor_rpts <- data_frame(repeat_classes = "Other",
+                         total_repeat_classes = minor_repeat_count)
+
+res <- bind_rows(rpt_summary[1:6, ], minor_rpts)
+res <- mutate(res, 
+              repeat_classes = factor(repeat_classes,
+                                      level = rev(repeat_classes)))
+
+a <- ggplot(res, aes(repeat_classes, total_repeat_classes)) +
+  geom_bar( stat = "identity") +
+  xlab("Repeat Class") +
+  ylab("Number of A-to-I\nediting sites") +
+  coord_flip() + 
+  scale_fill_manual(values = color_fxn(12)) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "none"
+  )
+
+# summarize by repeat name
+rpt_bed %>%  
+  filter(repeat_present == "repeat") %>% 
+  dplyr::select(site.x:repeat_present) %>% 
+  unique() -> rpt_summary
+
+rpt_summary %>% 
+  group_by(repeat_names) %>% 
+  summarize(total_repeat_classes = n()) %>%
+  arrange(desc(total_repeat_classes)) -> rpt_summary
+
+rpt_summary
+
+# summarize all repeat categorys less than top 15 as other
+minor_repeat_count <- sum(rpt_summary[15:nrow(rpt_summary), ]$total_repeat_classes)
+minor_rpts <- data_frame(repeat_names = "Other",
+                         total_repeat_classes = minor_repeat_count)
+
+res <- bind_rows(rpt_summary[1:16, ], minor_rpts)
+res <- mutate(res, 
+              repeat_names = factor(repeat_names,
+                                      level = rev(repeat_names)))
+b <- ggplot(res, aes(repeat_names, total_repeat_classes)) +
+  geom_bar( stat = "identity") +
+  xlab("Repeat Name") +
+  ylab("Number of A-to-I\nediting sites") +
+  coord_flip() + 
+  scale_fill_manual(values = color_fxn(12)) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "none"
+  )
+
+b
+plt <- plot_grid(a, b, rel_widths = c(1, 1.1))
+save_plot("hyperedits/seasonal_repeat_classification.pdf", plt, base_width = 8)
+# fig 3
+#file.copy("edits/repeat_classification.pdf", figs_dir[3], overwrite = T)
+```

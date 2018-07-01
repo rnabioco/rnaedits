@@ -1,0 +1,749 @@
+---
+title: "Fastq quality checks"
+author: "Kent Riemondy RBI"
+date: "8/2/2017"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Check QC metrics for Fastq samples
+
+1) Fastq read length
+2) Per base quality scores 
+3) Aligned Fragment length
+
+## Read length
+
+```{r, message=F, warning = F}
+library(dplyr)
+library(purrr)
+library(readr)
+library(stringr)
+library(RColorBrewer)
+library(cowplot)
+source("globals.R") # defines paths for relevant directories
+```
+
+```{r}
+
+files <- dir(file.path(data_dir, "qc_stats"), 
+           pattern = "*001.txt", 
+           recursive = T,
+           full.names = T)
+
+dat <- suppressMessages(map(files, ~read_tsv(.x,
+                            skip = 1)))
+
+names(dat) <- basename(files)
+
+dat <- bind_rows(dat, .id = "library")
+
+# extract out total catagory
+group_by(dat, library) %>% 
+  arrange(desc(POS), .by_group = T) %>% 
+  mutate(total = dplyr::first(`#bases`)) -> dat
+
+# drop POS == ALL rows and calculate % of reads
+filter(dat, POS != "ALL") %>% 
+  mutate(POS = as.numeric(POS),
+         obs = (`#bases` / total),
+         exp = (last(`#bases`) / total),
+         Fraction_of_expected_bases = obs / exp
+         ) %>% 
+  dplyr::rename(Cycle = POS) -> dat
+
+# add in medulla, forebrain, or hypothalamus label
+mutate(dat,
+       region = ifelse(str_detect(library, 
+                                  "M"), 
+                                  "Medulla",
+                                  ifelse(str_detect(library, "H"),
+                                             "Hypothalamus", 
+                                             ifelse(str_detect(library, "B"),
+                                                        "Forebrain", 
+                                                        "NA")))) -> dat
+
+# add in read 1 or read 2
+mutate(dat,
+       read = ifelse(str_detect(library, 
+                                  "R1"), 
+                                  "R1",
+                                  ifelse(str_detect(library, "R2"),
+                                             "R2", "NA"))) -> dat
+
+ggplot(dat, 
+       aes(Cycle, Fraction_of_expected_bases)) +
+  geom_point(aes(color = region), size = 0.25, alpha = 1) +
+  ylab("Fraction of expected\nbases at each cycle") +
+  scale_color_brewer(palette = "Dark2") +
+  facet_grid(region~read) +
+  geom_vline(aes(xintercept = 35)) +
+  labs(title = "The Hypothalmus and Medulla libraries are trimmed",
+       subtitle = "bcl2fastq defaults to keep reads with \nat least 35 bases after trimming adapters\n(see vertical line at cycle 35)")
+```
+
+It appears that the hypothalamus and medulla samples were trimmed. The trimming appears to be done by bcl2fastq, due to the drop in read lengths after position 35, which is the default minimum read length to keep after trimming. Perhaps the trimming was done by the core during demultiplexing. However ideally we should upload the untrimmed fastqs to the SRA/GEO if possible. 
+
+
+## Quality scores
+
+```{r}
+ggplot(dat, 
+       aes(Cycle, avgQ)) +
+  geom_point(aes(color = region), size = 0.25, alpha = 1) +
+  ylab("Average Quality Scores at each cycle") +
+  scale_color_manual(values = region_cols) +
+  facet_grid(region~read) +
+  labs(title = "Average Quality Scores")
+
+ggsave("mrna/qual_scores.pdf")
+```
+
+Quality scores look good. 
+
+
+## Insert length
+
+```{r}
+files <- dir(file.path(data_dir,"qc_stats", "insert_sizes"), 
+           pattern = ".txt", 
+           recursive = T,
+           full.names = T)
+
+
+dat <- suppressMessages(map(files, ~read_tsv(.x,
+                            n_max = 2,
+                            comment = "#",
+                            col_names = F)))
+add_colnames <- function(x, y){
+  colnames(x) <- y
+  x
+}
+dat <- map(dat, ~add_colnames(.x, .x[1, ]) %>% .[-c(1), ])
+
+names(dat) <- basename(files)
+
+dat <- bind_rows(dat, .id = "library")
+
+# add in medulla, forebrain, or hypothalamus label
+mutate(dat,
+       region = ifelse(str_detect(library, 
+                                  "M"), 
+                                  "Medulla",
+                                  ifelse(str_detect(library, "H"),
+                                             "Hypothalamus", 
+                                             ifelse(str_detect(library, "B"),
+                                                        "Forebrain", 
+                                                        "NA"))),
+       MEDIAN_INSERT_SIZE = as.numeric(MEDIAN_INSERT_SIZE)) -> dat
+
+ggplot(dat, 
+       aes(region, MEDIAN_INSERT_SIZE)) +
+  geom_boxplot(aes(fill = region)) + 
+  geom_jitter() +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(y = "Median insert size per library")
+
+dat %>% 
+  dplyr::select(library,
+                MEAN_INSERT_SIZE,
+                STANDARD_DEVIATION) %>% 
+  mutate(fq_name = str_split(library, 
+                             "_2pass", 
+                             simplify  = T)[, 1],
+         r1_fq = str_c(fq_name, "_R1_001.fastq.gz"),
+         r2_fq = str_c(fq_name, "_R2_001.fastq.gz")) %>% 
+  dplyr::select(r1_fq, r2_fq, MEAN_INSERT_SIZE, STANDARD_DEVIATION) -> out
+
+out 
+write_tsv(out, file.path(docs_dir, "pe_fq_info_for_geo.txt"))
+```
+
+The inferred insert sizes from the STAR alignments are shorter than 300 basepairs. Therefore many of the paired end read alignments will overlap to some degree. This isn't really a problem for most applications and is handled correctly by STAR and HaplotypeCaller. The plot below shows that same data but plots the distribution of insert sizes per library. 
+
+```{r}
+dat <- suppressMessages(map(files, ~read_tsv(.x,
+                            comment = "#",
+                            col_names = F,
+                            skip = 3)))
+add_colnames <- function(x, y){
+  colnames(x) <- y
+  x
+}
+dat <- map(dat, ~add_colnames(.x, .x[1, ]) %>% .[-c(1), ])
+
+names(dat) <- basename(files)
+
+dat <- bind_rows(dat, .id = "library")
+
+# add in medulla, forebrain, or hypothalamus label
+mutate(dat,
+       region = ifelse(str_detect(library, 
+                                  "M"), 
+                                  "Medulla",
+                                  ifelse(str_detect(library, "H"),
+                                             "Hypothalamus", 
+                                             ifelse(str_detect(library, "B"),
+                                                        "Forebrain", 
+                                                        "NA"))),
+       insert_size = as.numeric(insert_size),
+       count = as.numeric(All_Reads.fr_count)) -> dat
+
+group_by(dat, library) %>% 
+  mutate(max_count = max(count),
+         proportion = count / max_count) -> dat
+
+reds <- brewer.pal(n = 3, name = "Reds")
+ggplot(dat, 
+       aes(library, insert_size)) +
+  geom_point(aes(color = count)) +
+  facet_wrap(~region, drop = T, scale = "free") +
+  theme(axis.text.x = element_text(size = 3, angle = 90)) +
+  scale_color_continuous(low = reds[1], 
+                         high = reds[3],
+                         name = "Count of observed\n insert sizes")
+
+```
+
+
+
+## Read alignments
+
+```{r uniquely_mapped_reads_percentage, message=F, warning=F}
+star_alignments <- list.files(file.path(data_dir, "star"), 
+                              pattern = "[0-9]_2pass_Log.final.out",
+                              recursive = T, full.names = T)
+
+qc_dat <- suppressWarnings(map(star_alignments, ~readr::read_tsv(.x, col_names = F)))
+names(qc_dat) <- star_alignments
+
+qc_dat <- bind_rows(qc_dat, .id = "file")
+
+qc_dat <- mutate(qc_dat, 
+                 region = dirname(file) %>% 
+  str_split(., "/", simplify = F) %>% 
+  map_chr(., ~.x[8]))
+
+uniq_reads_percent <- filter(qc_dat, X1 == "Uniquely mapped reads % |") %>% 
+  mutate(X2 = as.numeric(str_replace(X2, "%", "")))
+
+uniq_reads <- filter(qc_dat, X1 == "Uniquely mapped reads number |") %>% 
+  mutate(X2 = as.numeric(X2))
+
+uniq_reads <- mutate(uniq_reads, 
+                     region = factor(region,
+                                     levels = c("brainrest",
+                                                "hypothalamus",
+                                                "medulla"),
+                                     labels = c("Cerebrum",
+                                                "Hypothalamus",
+                                                "Medulla")))
+
+uniq_reads_percent <- mutate(uniq_reads_percent, 
+                     region = factor(region,
+                                     levels = c("brainrest",
+                                                "hypothalamus",
+                                                "medulla"),
+                                     labels = c("Cerebrum",
+                                                "Hypothalamus",
+                                                "Medulla")))
+
+a <- ggplot(uniq_reads, aes(file, X2)) + 
+  geom_bar(stat = "identity", aes(fill = region)) +
+  ylab("Number of Uniquely Mapped Reads") +
+  scale_fill_manual(values = region_cols) + 
+  theme(
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "top"
+  )
+a
+
+mean(uniq_reads_percent$X2)
+sd(uniq_reads_percent$X2)
+
+
+raw_reads <- filter(qc_dat, X1 == "Number of input reads |") %>% 
+  mutate(X2 = as.numeric(X2))
+
+mean(raw_reads$X2)
+sd(raw_reads$X2)
+
+raw_reads$Unique <- filter(qc_dat, X1 == "Uniquely mapped reads number |") %>% 
+  mutate(X2 = as.numeric(X2)) %>% dplyr::pull(X2)
+
+raw_reads$Multi <- filter(qc_dat, X1 == "Number of reads mapped to multiple loci |") %>% 
+  mutate(X2 = as.numeric(X2)) %>% dplyr::pull(X2)
+
+mutate(raw_reads, 
+       unmapped = X2 - Unique - Multi) -> raw_reads
+```
+
+Mean alignment rate = `r mean(uniq_reads_percent$X2)`
+Sd alignment rate = `r sd(uniq_reads_percent$X2)`
+
+
+Mean raw reads = `r mean(raw_reads$X2)`
+Sd raw reads = `r sd(raw_reads$X2)`
+
+Mean unmapped reads = `r mean(raw_reads$unmapped)`
+Sd unmapped reads = `r sd(raw_reads$unmapped)`
+
+```{r uniquely_mapped_reads, fig.width = 8}
+b <- ggplot(uniq_reads_percent, aes(file, X2)) + 
+  geom_bar(stat = "identity", aes(fill = region)) +
+  ylab("Percent Uniquely Mapped Reads") +
+  scale_fill_manual(values = region_cols) + 
+  theme(
+    axis.text.x = element_blank(),
+    axis.title.x = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "top"
+  )
+b
+
+plt <- plot_grid(a, b, labels = "AUTO")
+plt
+save_plot("mrna/qc_alignments.pdf", plt, base_width = 8)
+file.copy("mrna/qc_alignments.pdf", figs_dir[1], overwrite = T)
+```
+
+### write out table
+
+```{r}
+qc_dat_summary <- spread(qc_dat, X1, X2) 
+
+colnames(qc_dat_summary) <- colnames(qc_dat_summary) %>% 
+  str_replace(., " \\|", "") 
+
+qc_dat_summary <- qc_dat_summary  %>% 
+  dplyr::select(file, 
+         region,
+         `Number of input reads`,
+         `Uniquely mapped reads %`,
+         `% of reads mapped to multiple loci`)
+
+qc_dat_summary <- qc_dat_summary %>% 
+  mutate(fastq_id = str_split(file, "\\/", simplify = T) %>% .[, 9],
+         sample_id = str_split(fastq_id, "_", simplify = T) %>% 
+           .[, 1] %>% 
+           str_replace("^[0-9]+-", ""),
+         fastq_id = str_replace(fastq_id, "_2pass_Log.final.out", "")) %>% 
+  dplyr::select(-file)
+
+## get phenodata
+pdata <- read_tsv(file.path(docs_dir, "BrainRegionRNAseqLibMetadata.txt"))
+pdata <- gather(pdata, region, 
+                sample, Forebrain, Hypothalamus, Medulla)
+pdata <- mutate(pdata, 
+                animal_number = str_split(sample, "_", simplify = T)[, 1])
+
+pdata <- dplyr::filter(pdata,
+                       !is.na(sample))
+
+simple_pdata <- dplyr::select(pdata, animal_number, State, sacTb) %>% unique()
+
+
+qc_dat_summary <- left_join(qc_dat_summary,
+          simple_pdata, by = c("sample_id" = "animal_number")) %>% 
+  mutate(region = ifelse(region == "brainrest",
+                         "cerebrum",
+                         region),
+         sequencing_read_length = ifelse(region == "cerebrum",
+                                         126,
+                                         151))
+
+## add in mapping between GEO title and fastq name
+
+geo_ids <- tibble::tribble(
+  ~sample_title, ~fastq_id,
+       "Forebrain_SA_rep1",    "B30_2_GCCAAT_L001_R1_001",
+      "Forebrain_SA_rep2",   "B31_8_AGTTCC_L001_R1_001",
+      "Forebrain_SA_rep3",  "B32_14_CCGTCC_L002_R1_001",
+      "Forebrain_SA_rep4",  "B33_20_ATTCCT_L002_R1_001",
+      "Forebrain_SA_rep5",  "B34_26_GCCAAT_L003_R1_001",
+      "Forebrain_Ar_rep1",   "B53_6_GATCAG_L001_R1_001",
+      "Forebrain_Ar_rep2",  "B54_12_TGACCA_L002_R1_001",
+     "Forebrain_Ent_rep1",   "B55_4_GTGAAA_L001_R1_001",
+      "Forebrain_Ar_rep3",  "B57_18_GAGTGG_L002_R1_001",
+      "Forebrain_Ar_rep4",  "B58_24_GGCTAC_L003_R1_001",
+     "Forebrain_Ent_rep2",  "B59_10_GTCCGC_L001_R1_001",
+      "Forebrain_Ar_rep5",  "B61_30_GATCAG_L003_R1_001",
+     "Forebrain_Ent_rep3",  "B62_16_GTTTCG_L002_R1_001",
+     "Forebrain_Ent_rep4",  "B64_22_ACTTGA_L003_R1_001",
+      "Forebrain_LT_rep1",   "B65_5_TTAGGC_L001_R1_001",
+     "Forebrain_Ent_rep5",  "B66_28_GTGAAA_L003_R1_001",
+      "Forebrain_LT_rep2",  "B67_11_CGATGT_L002_R1_001",
+      "Forebrain_LT_rep3",  "B68_17_CGTACG_L002_R1_001",
+     "Forebrain_IBA_rep1",  "B69_15_GTGGCC_L002_R1_001",
+     "Forebrain_IBA_rep2",  "B70_21_ATCACG_L003_R1_001",
+      "Forebrain_LT_rep4",  "B72_23_TAGCTT_L003_R1_001",
+      "Forebrain_LT_rep5",  "B74_29_TTAGGC_L003_R1_001",
+     "Forebrain_SpD_rep1",  "B77_13_CAGATC_L002_R1_001",
+     "Forebrain_IBA_rep3",  "B78_27_CTTGTA_L003_R1_001",
+     "Forebrain_SpD_rep2",  "B79_19_ACTGAT_L002_R1_001",
+     "Forebrain_SpD_rep3",  "B80_25_ACAGTG_L003_R1_001",
+     "Forebrain_SpD_rep4",   "B83_1_ACAGTG_L001_R1_001",
+     "Forebrain_SpD_rep5",   "B84_7_AGTCAA_L001_R1_001",
+     "Forebrain_IBA_rep4",  "B153_3_CTTGTA_L001_R1_001",
+     "Forebrain_IBA_rep5",  "B163_9_ATGTCA_L001_R1_001",
+   "Hypothalamus_SA_rep1",     "35-H29_S39_L005_R1_001",
+   "Hypothalamus_SA_rep2",     "41-H30_S45_L005_R1_001",
+   "Hypothalamus_SA_rep3",     "47-H31_S60_L008_R1_001",
+   "Hypothalamus_SA_rep4",     "53-H33_S66_L008_R1_001",
+   "Hypothalamus_SA_rep5",     "59-H34_S72_L008_R1_001",
+   "Hypothalamus_Ar_rep1",     "31-H53_S35_L005_R1_001",
+   "Hypothalamus_Ar_rep2",     "37-H54_S41_L005_R1_001",
+   "Hypothalamus_Ar_rep3",     "43-H57_S47_L005_R1_001",
+  "Hypothalamus_Ent_rep1",     "32-H59_S36_L005_R1_001",
+   "Hypothalamus_Ar_rep4",     "49-H60_S62_L008_R1_001",
+   "Hypothalamus_Ar_rep5",     "55-H61_S68_L008_R1_001",
+  "Hypothalamus_Ent_rep2",     "38-H62_S42_L005_R1_001",
+  "Hypothalamus_Ent_rep3",     "44-H64_S48_L005_R1_001",
+   "Hypothalamus_LT_rep1",     "34-H65_S38_L005_R1_001",
+  "Hypothalamus_Ent_rep4",     "50-H66_S63_L008_R1_001",
+   "Hypothalamus_LT_rep2",     "40-H67_S44_L005_R1_001",
+   "Hypothalamus_LT_rep3",     "46-H68_S59_L008_R1_001",
+  "Hypothalamus_IBA_rep1",     "33-H69_S37_L005_R1_001",
+  "Hypothalamus_IBA_rep2",     "39-H70_S43_L005_R1_001",
+   "Hypothalamus_LT_rep4",     "52-H72_S65_L008_R1_001",
+   "Hypothalamus_LT_rep5",     "58-H74_S71_L008_R1_001",
+  "Hypothalamus_SpD_rep1",     "48-H77_S61_L008_R1_001",
+  "Hypothalamus_IBA_rep3",     "45-H78_S49_L005_R1_001",
+  "Hypothalamus_SpD_rep2",     "54-H79_S67_L008_R1_001",
+  "Hypothalamus_SpD_rep3",     "60-H80_S73_L008_R1_001",
+  "Hypothalamus_SpD_rep4",     "36-H83_S40_L005_R1_001",
+  "Hypothalamus_SpD_rep5",     "42-H84_S46_L005_R1_001",
+  "Hypothalamus_IBA_rep4",    "51-H153_S64_L008_R1_001",
+  "Hypothalamus_IBA_rep5",    "57-H163_S70_L008_R1_001",
+  "Hypothalamus_Ent_rep5",    "56-H164_S69_L008_R1_001",
+        "Medulla_SA_rep1",       "5-M30_S5_L001_R1_001",
+        "Medulla_SA_rep2",     "11-M31_S11_L001_R1_001",
+        "Medulla_SA_rep3",     "17-M32_S21_L003_R1_001",
+        "Medulla_SA_rep4",     "23-M33_S27_L003_R1_001",
+        "Medulla_SA_rep5",     "29-M34_S33_L003_R1_001",
+        "Medulla_Ar_rep1",       "1-M53_S1_L001_R1_001",
+        "Medulla_Ar_rep2",       "7-M54_S7_L001_R1_001",
+       "Medulla_Ent_rep1",       "2-M55_S2_L001_R1_001",
+        "Medulla_Ar_rep3",     "13-M57_S13_L001_R1_001",
+        "Medulla_Ar_rep4",     "19-M58_S23_L003_R1_001",
+       "Medulla_Ent_rep2",       "8-M59_S8_L001_R1_001",
+        "Medulla_Ar_rep5",     "25-M61_S29_L003_R1_001",
+       "Medulla_Ent_rep3",     "14-M62_S14_L001_R1_001",
+        "Medulla_LT_rep1",       "4-M65_S4_L001_R1_001",
+       "Medulla_Ent_rep4",     "20-M66_S24_L003_R1_001",
+        "Medulla_LT_rep2",     "10-M67_S10_L001_R1_001",
+        "Medulla_LT_rep3",     "16-M68_S20_L003_R1_001",
+       "Medulla_IBA_rep1",       "3-M69_S3_L001_R1_001",
+       "Medulla_IBA_rep2",       "9-M70_S9_L001_R1_001",
+        "Medulla_LT_rep4",     "22-M72_S26_L003_R1_001",
+        "Medulla_LT_rep5",     "28-M74_S32_L003_R1_001",
+       "Medulla_SpD_rep1",     "18-M77_S22_L003_R1_001",
+       "Medulla_IBA_rep3",     "15-M78_S15_L001_R1_001",
+       "Medulla_SpD_rep2",     "24-M79_S28_L003_R1_001",
+       "Medulla_SpD_rep3",     "30-M80_S34_L003_R1_001",
+       "Medulla_SpD_rep4",       "6-M83_S6_L001_R1_001",
+       "Medulla_SpD_rep5",     "12-M84_S12_L001_R1_001",
+       "Medulla_IBA_rep4",    "21-M153_S25_L003_R1_001",
+       "Medulla_IBA_rep5",    "27-M163_S31_L003_R1_001",
+       "Medulla_Ent_rep5",    "26-M164_S30_L003_R1_001",
+           "Neonate_head", "P1_H_33_CAGATC_L004_R1_001",
+         "Neonate_middle", "P1_M_34_CCGTCC_L004_R1_001",
+           "Neonate_tail", "P1_T_35_GTGGCC_L004_R1_001",
+            "Testes_rep1", "T77D_32_TGACCA_L004_R1_001",
+            "Testes_rep2", "T77O_31_CGATGT_L004_R1_001"
+  )
+
+geo_ids <- mutate(geo_ids, fastq_id = str_replace(fastq_id, "_R1_001", ""))
+
+qc_dat_summary <- left_join(qc_dat_summary, 
+                            geo_ids, 
+                            by = "fastq_id")
+
+qc_dat_summary <- dplyr::select(qc_dat_summary,
+                fastq_id, sample_title, 
+                sample_id, region, State, sacTb, everything()) %>% 
+  dplyr::rename(`Number of reads after quality and adapter trimming` = `Number of input reads`)
+openxlsx::write.xlsx(qc_dat_summary, "qc_summary_statistics.xlsx")
+```
+
+
+## Mismatch profile
+
+Check the proportion and types of mismatches along the read to see if any trimming is necessary. 
+
+```{r mismatch, message = F}
+mm_files <- list.files(file.path(data_dir, "qc_stats"),
+                       recursive = T,
+                       full.names = T,
+                       pattern = ".mismatch_profile.xls")
+
+mm_dat <- map(mm_files, ~read_tsv(.x))
+names(mm_dat) <- basename(mm_files)
+
+map(mm_dat, 
+    ~gather(., mismatch, count, -read_pos, -sum)) -> mm_dat 
+
+mm_summary <- bind_rows(mm_dat, .id = "file")
+mm_summary <- mm_summary %>% 
+  mutate(region = ifelse(str_detect(file, "B"),
+                         "Forebrain",
+                         ifelse(str_detect(file, "M"),
+                                "Medulla",
+                                ifelse(str_detect(file, "H"),
+                                       "Hypothalamus", NA))))
+mm_summary <- group_by(mm_summary,
+                       read_pos, mismatch, region) %>% 
+  summarize(mean_mm = mean(count, na.rm = T),
+            sd_mm = sd(count, na.rm = T))
+
+ggplot(mm_summary, aes(read_pos, mean_mm)) +
+  geom_line() +
+  facet_grid(region~mismatch) +
+  scale_x_continuous(breaks = seq(0, 150, 150))
+
+ag_summary <- dplyr::filter(mm_summary,
+                            mismatch == "A2G")
+
+ggplot(ag_summary, aes(read_pos, mean_mm)) +
+  geom_line() +
+  facet_grid(region~mismatch)+
+  scale_x_continuous(breaks = seq(0, 150, 10))
+```
+
+
+There is a strange enrichment for A-to-G, C-to-T, G-to-A, and T-C in the first ~5 bases of the read. Not sure what this means, but is reminiscent of the SNP profile from the unfiltered variants.
+
+### Check the position of editing sites in reads
+
+One possible issue is that mismatches are common at the ends of reads due to random hexamer mispriming. I'm not sure if these libraries were generated in this fashion, need to check with Sandy. It's important to check if the identified editing sites are not positionally enriched along the read length. See:
+Comment on “Widespread RNA and DNA Sequence Differences in the Human Transcriptome” Wei Lin,1 Robert Piskol,Meng How Tan,2 Jin Billy Li2
+http://science.sciencemag.org/content/335/6074  
+and  
+http://science.sciencemag.org/content/335/6074/1302.3.full  
+and  
+http://science.sciencemag.org/content/335/6074/1302.4.full  
+
+I wrote a python script [check_editposition.py](../../../../lib/check_editposition.py) that parses the bam alignments (2pass non-split alignments), and determines where in each read the editing position occurs. If the editing site contains a mismatch to the reference (i.e. is edited) then the site is counted. 
+
+```{r, message=F, fig.width=12}
+mm_files <- list.files(file.path(data_dir, 
+                                 "edit_sites", 
+                                 "nonsig_edit_positions"),
+                       recursive = T,
+                       full.names = T,
+                       pattern = "_editpos.txt$")
+
+mm_dat <- map(mm_files, ~read_tsv(.x))
+names(mm_dat) <- basename(mm_files)
+
+mm_summary <- bind_rows(mm_dat, .id = "file")
+mm_summary <- mm_summary %>% 
+  mutate(region = ifelse(str_detect(file, "B"),
+                         "Forebrain",
+                         ifelse(str_detect(file, "M"),
+                                "Medulla",
+                                ifelse(str_detect(file, "H"),
+                                       "Hypothalamus", NA))))
+mm_summary <- group_by(mm_summary,
+                       position, region) %>% 
+  summarize(mean_mm = mean(total_reads, na.rm = T),
+            sd_mm = sd(total_reads, na.rm = T))
+
+ggplot(mm_summary, aes(position, mean_mm)) +
+  geom_line() +
+  facet_grid(~region) +
+  scale_x_continuous(breaks = seq(0, 150, 25)) +
+  labs(title = "Non-significant A-to-G SNVs")
+```
+
+```{r sig_edits, message=F}
+mm_files <- list.files(file.path(data_dir, 
+                                 "edit_sites", 
+                                 "edit_positions"),
+                       recursive = T,
+                       full.names = T,
+                       pattern = "_editpos.txt$")
+
+mm_dat <- map(mm_files, ~read_tsv(.x))
+names(mm_dat) <- basename(mm_files)
+
+mm_summary <- bind_rows(mm_dat, .id = "file")
+mm_summary <- mm_summary %>% 
+  mutate(region = ifelse(str_detect(file, "B"),
+                         "Forebrain",
+                         ifelse(str_detect(file, "M"),
+                                "Medulla",
+                                ifelse(str_detect(file, "H"),
+                                       "Hypothalamus", NA))))
+mm_summary <- group_by(mm_summary,
+                       position, region) %>% 
+  summarize(mean_mm = mean(total_reads, na.rm = T),
+            sd_mm = sd(total_reads, na.rm = T))
+
+ggplot(mm_summary, aes(position, mean_mm)) +
+  geom_line() +
+  facet_grid(~region) +
+  scale_x_continuous(breaks = seq(0, 150, 25)) +
+  labs(title = "Significant A-to-G SNVs")
+
+
+```
+
+## metadat formatting for GEO
+
+```{r geo}
+# get phenotype data
+pdata <- read_tsv(file.path(docs_dir, "BrainRegionRNAseqLibMetadata.txt"))
+pdata <- gather(pdata, region, 
+                sample, Forebrain, Hypothalamus, Medulla)
+pdata <- mutate(pdata, 
+                animal_number = str_split(sample, "_", simplify = T)[, 1])
+
+pdata <- dplyr::filter(pdata,
+                       !is.na(sample))
+
+#get list of fastq filenames
+fqfiles <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_all_sites_raw_counts.txt.gz", n_max = 1) %>% 
+  colnames(.) %>% 
+  str_subset(., "counts") %>% 
+  str_replace(., "_counts.txt.gz", "_R1_001.fastq.gz")
+
+r2 <- str_replace(fqfiles, "R1", "R2")
+
+fqfiles <- data_frame(r1 = fqfiles, r2 = r2)
+
+fqfiles <- mutate(fqfiles, 
+                  animal_number = str_match(r1, "[MHB][0-9]+[^_]")[, 1])
+
+metadata <- inner_join(pdata, fqfiles)
+
+metadata <- metadata %>% 
+  group_by(region, State) %>% 
+  mutate(rep = row_number(),
+         rep = paste0("rep", rep),
+         sample_name = paste(region, State, rep, sep = "_"))
+
+metadata <- dplyr::select(metadata,
+                          -c(1:3), -SacDate, -rep, -sample, -animal_number)
+
+metadata <- mutate(metadata,
+                   organism = "Ictidomys tridecemlineatus",
+                   molecule = "polyA_RNA",
+                   sample_id = sample_name
+                   )
+# format to match xlsx for geo submission
+metadata <- dplyr::select(metadata, 
+                          sample_id, sample_name,
+                          region, organism,
+                          Animal, State,
+                          Sex, sacTb, molecule,
+                          everything())
+
+metadata
+
+write_tsv(metadata, file.path(docs_dir, "geo_formatted_metadata.txt"))
+
+# get md5 checksums
+
+md5s <- dir(file.path(data_dir, "raw_data", "checksums"),
+            full.names = T)
+md5s <- map(md5s, 
+            ~read.table(.x, 
+                        col.names = c("md5", "fastq"),
+                        stringsAsFactors = F))
+
+md5s <- bind_rows(md5s)
+
+md5s <- mutate(md5s, fastq = basename(fastq),
+               file_type = "fastq",
+               instrument = ifelse(str_detect(fastq, 
+                                              "^B"),
+                                              "Illumina 2500",
+                                              "Illumina 4000"),
+               length = ifelse(str_detect(fastq, 
+                                              "^B"),
+                                              "126",
+                                              "0"),
+               library = "paired-end")
+
+md5s <- dplyr::select(md5s, 
+                      fastq, file_type, 
+                      md5, instrument, length, library) %>% 
+  dplyr::arrange(desc(fastq))
+
+all(md5s$fastq %in% c(metadata$r1, metadata$r2))
+
+md5s
+
+write_tsv(md5s, file.path(docs_dir, "geo_formatted_checksums.txt"))
+```
+
+
+# percent of alignments to introns/exons
+
+```{r, message = F, warning=F}
+files <- dir(file.path(data_dir,
+                         "star",
+                         "align_stat"),
+               recursive = T,
+             full.names = T)
+
+stats <- map(files, read_tsv, col_names = F) 
+
+stats <- map(stats, 
+             ~separate(.x, X2, c("id", "count"), sep = " "))
+stats <- map(stats, ~.x[, -1])
+stats <- bind_rows(stats, .id = "lib")
+
+stats <- stats %>% 
+  group_by(lib) %>%
+  mutate(type = ifelse(str_detect(id, "exon"),
+                       "Exonic",
+                       ifelse(str_detect(id, fixed(".")), 
+                       "Unannotated",
+                       "Intron")))
+
+stats %>% 
+  group_by(lib, type) %>% 
+  summarize(reads = sum(as.numeric(count))) %>% 
+  group_by(lib) %>% 
+  mutate(percent = 100 * (reads / sum(reads))) -> stats
+
+stats %>% 
+  ungroup() %>% 
+  mutate(lib = as.numeric(lib),
+         annotation = ifelse(lib <= 90,
+                             "stringtie + taco",
+                             "ensembl")) %>%
+  dplyr::select(-lib) -> stats
+
+p <- ggplot(stats, aes(type, percent)) +
+  geom_boxplot(aes(fill = annotation), 
+               coef = 10,
+               lwd = 0.25) +
+  scale_fill_brewer(palette = "Set1",
+                    name = "Transcriptome") +
+  labs(y = "Percent of uniquely aligned\nreads overlapping annotation",
+       x = "")
+
+save_plot("mrna/percent_exonic_intronic.pdf", p, base_aspect_ratio = c(1.4, 1))
+
+stats %>% 
+  group_by(annotation, type) %>% 
+  summarize(mean_percent = mean(percent),
+            sd_percent = sd(percent))
+
+stats %>% 
+  group_by(annotation) %>% 
+  summarize(total_unique_alignments = sum(reads))
+```

@@ -1,0 +1,16 @@
+---
+title: "Snakemake Pipeline"
+author: "Kent Riemondy RBI"
+date: "8/16/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Snakemake pipeline
+
+[Snakemake](http://snakemake.readthedocs.io/en/stable/index.html) was used to generate a pipeline to process all of the RNA-Seq data. 
+
+The pipeline is viewable on [github](https://github.com/rnabioco/martin/tree/master/pipeline) 

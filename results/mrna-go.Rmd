@@ -1,0 +1,504 @@
+---
+title: "GO Analyses"
+author: "Kent Riemondy RBI"
+date: "8/23/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+```{r ,message=FALSE, warning=FALSE}
+# taken from results/2017-08-15/go_analysis
+
+# contains global variables, paths, and packages
+source("globals.R")
+```
+
+## GO annotations
+  GO annotations were downloaded from Ensembl Biomart. These will be matched to differentially expressed transcripts and genes with edits to establish any biological processes or molecular functions enriched. 
+  
+```{r, message = F}
+
+if(!file.exists( "mrna/mart_export_goids_spetri2.txt.gz")) {
+  url <- 'http://www.ensembl.org/biomart/martservice?query=<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE Query><Query  virtualSchemaName = "default" formatter = "TSV" header = "1" uniqueRows = "1" count = "" datasetConfigVersion = "0.6" ><Dataset name = "itridecemlineatus_gene_ensembl" interface = "default" ><Attribute name = "ensembl_gene_id" /><Attribute name = "go_id" /><Attribute name = "name_1006" /><Attribute name = "namespace_1003" /><Attribute name = "ensembl_transcript_id" /><Attribute name = "chromosome_name" /><Attribute name = "start_position" /><Attribute name = "end_position" /><Attribute name = "strand" /><Attribute name = "external_gene_name" /><Attribute name = "gene_biotype" /><Attribute name = "transcript_biotype" />	</Dataset></Query>'
+  
+  download.file(url, "mrna/mart_export_goids_spetri2.txt", method = "wget")
+  R.utils::gzip( "mrna/mart_export_goids_spetri2.txt", overwrite = T, remove = T)
+}
+
+
+if(!file.exists("mrna/mart_export_geneids_to_genesymbols.txt.gz")){
+  url <- 'http://www.ensembl.org/biomart/martservice?query=<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE Query><Query  virtualSchemaName = "default" formatter = "TSV" header = "0" uniqueRows = "0" count = "" datasetConfigVersion = "0.6" ><Dataset name = "itridecemlineatus_gene_ensembl" interface = "default" ><Attribute name = "ensembl_gene_id" /><Attribute name = "ensembl_transcript_id" /><Attribute name = "external_gene_name" /></Dataset></Query>'
+  
+  download.file(url, "mrna/mart_export_geneids_to_genesymbols.txt", method = "wget")
+  R.utils::gzip( "mrna/mart_export_geneids_to_genesymbols.txt", overwrite = T, remove = T)
+}
+
+ensembl_to_geneid <- read_tsv("mrna/mart_export_geneids_to_genesymbols.txt.gz",
+                              col_names = c("geneid", "transcriptid", "name"))
+
+```  
+
+
+## Format GO ids for topGO
+
+```{r}
+go_dat <- read_tsv("mrna/mart_export_goids_spetri2.txt.gz")
+
+# convert to named list of character vectors, with names == geneids, and vector == go IDs
+split(go_dat, go_dat[["Gene stable ID"]]) %>% 
+  map(., ~.x[["GO term accession"]]) -> go_list
+
+str(go_list[1:10])
+
+all_genes <- names(go_list)
+
+```
+
+## Select interesting genes
+
+## Pull in gene sets
+
+```{r, eval = T}
+
+edits <- read_tsv(file.path("edits", "A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz"))
+edits <- dplyr::filter(edits, kmeans_cluster == 1)
+edit_ids <- edits$GENE_ID %>% unique()
+sum(edit_ids %in% all_genes)
+
+# drop NA, leading some annotations
+edit_ids <- str_replace(edit_ids, "^NA,", "")
+
+#drop concatenated annotations or denovo
+edit_ids <- edit_ids[!str_detect(edit_ids, ",") & !str_detect(edit_ids, "^G")]
+
+# examine shared edited genes
+edits %>% 
+  dplyr::select(site, Region, GENE_ID) %>% 
+  split(., .$Region) -> edits_by_region
+
+shared_edits <- dplyr::intersect(dplyr::intersect(edits_by_region$Forebrain$site, 
+                                  edits_by_region$Hypothalamus$site), 
+                 edits_by_region$Medulla$site)
+
+dplyr::filter(edits, site %in% shared_edits) %>% 
+  dplyr::pull(GENE_ID) %>% 
+  unique() -> shared_edits
+
+clean_ids <- shared_edits[!str_detect(shared_edits, ",") & !str_detect(shared_edits, "^G")]
+write_tsv(as_data_frame(clean_ids), file.path("edits", "edited_gene_list_all_sig_edits.txt"), col_names = F)
+```
+
+```{r mrna_go}
+## mRNA expression
+dat <- map(region_order, 
+  ~read_tsv(paste0("mrna/", .x, "_lrt_results.txt")))
+names(dat) <- region_order
+
+# read in kmeans classifications
+kmeans_dat <- read_tsv("mrna/transcript_kmeans_class.txt.gz")
+kmeans_dat <- split(kmeans_dat, kmeans_dat$Region)
+kmeans_dat <- kmeans_dat[names(dat)]
+
+dat <- map2(dat, kmeans_dat, 
+            ~left_join(.x, .y, 
+                       by = c("denovo_id" = "transcript")))
+# merge clusters 1, 2, 3 (warm enriched transcripts) and clusters 4, 5
+dat <- map(dat, ~mutate(.x, 
+                        class = ifelse(cluster %in% c(1, 2, 3), 
+                                       1, 
+                                       2)))
+# get lists of all detectable genes
+all_detected_genes <- map(dat, 
+                 ~pull(.x, gene_ids) %>% 
+                   unique() %>% 
+                   str_replace("^NA,", "") %>%
+                   .[!str_detect(., ",") & !str_detect(., "^G")])
+
+# format list of list into list
+dat <- map(dat, ~split(.x, .x$class)) %>% 
+  flatten()
+# named as meddula1 medulla2 etc.
+ 
+names(dat) <- paste0(rep(region_order, each = 2), c(1, 2))
+
+# extract out significant genes
+de_dat <- map(dat, 
+              ~dplyr::filter(.x, FDR < 0.01) %>% 
+                pull(gene_ids) %>% 
+                unique()  %>% 
+                   str_replace("^NA,", "") %>%
+                   .[!str_detect(., ",") & !str_detect(., "^G")])
+
+# replicate detected genes for each class
+all_detected_genes <- rep(all_detected_genes, each = 2)
+all_present_in_all_libs <- unlist(all_detected_genes) %>%  unique()
+all_present_in_all_libs <- all_present_in_all_libs[!str_detect(all_present_in_all_libs, ",") & !str_detect(all_present_in_all_libs, "^G")]
+
+```
+
+Only `r sum(all_present_in_all_libs %in% all_genes)` mRNAs can be unambiguously mapped to go terms out of `r length(all_detected_genes)` sites. This is due mainly to overlapping gene annotations from the transcriptome assembly. Not sure how to systematically fix this issue. 
+
+## GO terms for edited genes {.tabset}
+
+```{r util_fxn}
+
+fisher_topgo <- function(all_genes, test_genes, go_list, 
+                         ontology_category = "MF", 
+                         algo = "parentchild",
+                         pval_cutoff = 0.05,
+                         enrichment_cutoff = 1.3,
+                         geneid_mapping = ensembl_to_geneid){
+  
+  geneList <- factor(as.integer(all_genes %in% test_genes))
+  names(geneList) <- all_genes
+  
+  GOdata <- new("topGOdata", ontology = ontology_category, allGenes = geneList,
+   annot = annFUN.gene2GO, gene2GO = go_list)
+  
+  resultFisher <- runTest(GOdata, algorithm = algo, statistic = "fisher")
+  
+  res <- GenTable(GOdata, classicFisher = resultFisher,
+   orderBy = "classicFisher", ranksOf = "classicFisher", topNodes = 100)
+  
+  #gotogene maps
+  allGO <- genesInTerm(GOdata)
+
+  #select genes in each go term that were significant
+  go_to_sig_genes <- map(allGO, ~.x[.x %in% test_genes])
+
+  #rename columns
+  res <- dplyr::rename(res, pval = classicFisher)
+  
+  res <- mutate_at(res, 
+                   .funs = as.numeric, 
+                   .vars = c("Annotated", "Significant", "Expected", "pval"))
+  # compute enrichment
+  res <- mutate(res, 
+                  enrichment = Significant / Expected)
+  
+  # filter results
+  res <- dplyr::filter(res,
+                       pval < pval_cutoff,
+                       enrichment > enrichment_cutoff) 
+  
+  # add in a string column with all sig gene ids
+  mutate(res, ensembl_ids = map(GO.ID, 
+                                 ~go_to_sig_genes[[.x]])) %>% 
+  tbl_df() -> res
+
+  # add in a string column with all sig gene ids
+  mutate(res, gene_names = map(ensembl_ids, 
+                               ~left_join(data_frame(geneid = .x), 
+                                          geneid_mapping, by = "geneid") %>% 
+                                 dplyr::pull(name) %>% 
+                                 unique() %>% 
+                                 na.omit() %>% 
+                                 unlist())) -> res
+  
+  res %>% 
+    mutate(ensembl_ids = map_chr(ensembl_ids, ~paste0(., collapse = ",")),
+           gene_names = map_chr(gene_names, ~paste0(., collapse = ","))) -> res
+  
+  res 
+}
+
+```
+### MF
+```{r, eval = T}
+
+go_types <- c("MF","CC","BP")
+
+all_sig_edits_go_terms <- map(go_types,
+                                ~fisher_topgo(all_present_in_all_libs, 
+                                    edit_ids, 
+                                    go_list, 
+                                    algo = "parentchild",
+                                    ontology_category = .x))
+
+names(all_sig_edits_go_terms) <- go_types
+all_sig_edits_go_terms$MF
+```
+
+### BP
+
+```{r, eval = T}
+
+all_sig_edits_go_terms$BP
+```
+
+### CC
+
+```{r, eval = T}
+
+all_sig_edits_go_terms$CC
+```
+
+```{r write_out}
+
+# set geneid and gene_name cols to Text to avoid renaming to dates
+all_sig_edits_go_terms <- map(all_sig_edits_go_terms,
+    ~set_xlsx_class(.x, 
+                    c("ensembl_ids", "gene_names"), 
+                    "Text"))
+
+# set numbers to scientific for pvals
+all_sig_edits_go_terms <- map(all_sig_edits_go_terms,
+    ~set_xlsx_class(.x, 
+                    "pval", 
+                    "Scientific"))
+
+names(all_sig_edits_go_terms) <- go_types
+openxlsx::write.xlsx(all_sig_edits_go_terms, "edits/edit_go_terms.xlsx")
+
+```
+## Molecular Function GO terms for DE genes in different classes {.tabset}
+
+```{r mf}
+# exclude pval < 0.05 and enrichment < 1.3
+res_mf <- map2(de_dat, all_detected_genes, ~fisher_topgo(.y, 
+                                    .x, 
+                                    go_list, 
+                                    algo = "parentchild",
+                                    ontology_category = "MF"))
+```
+
+### Medulla Class 1
+
+```{r}
+res_mf[["Medulla1"]]
+```
+
+### Medulla Class 2
+
+```{r}
+res_mf[["Medulla2"]]
+```
+
+### Hypothalamus Class 1
+
+```{r}
+res_mf[["Hypothalamus1"]]
+```
+
+### Hypothalamus Class 2
+
+```{r}
+res_mf[["Hypothalamus2"]]
+```
+
+### Forebrain Class 1
+
+```{r}
+res_mf[["Forebrain1"]]
+```
+
+### Forebrain Class 2
+
+```{r}
+res_mf[["Forebrain2"]]
+```
+
+## Biological Process GO terms for DE genes in different classes {.tabset}
+
+```{r bp}
+# exclude pval < 0.05 and enrichment < 1.3
+res_bp <- map2(de_dat, all_detected_genes, ~fisher_topgo(.y, 
+                                    .x, 
+                                    go_list, 
+                                    algo = "parentchild",
+                                    ontology_category = "MF"))
+```
+
+### Medulla Class 1
+
+```{r}
+res_bp[["Medulla1"]]
+```
+
+### Medulla Class 2
+
+```{r}
+res_bp[["Medulla2"]]
+```
+
+### Hypothalamus Class 1
+
+```{r}
+res_bp[["Hypothalamus1"]]
+```
+
+### Hypothalamus Class 2
+
+```{r}
+res_bp[["Hypothalamus2"]]
+```
+
+### Forebrain Class 1
+
+```{r}
+res_bp[["Forebrain1"]]
+```
+
+### Forebrain Class 2
+
+```{r}
+res_bp[["Forebrain2"]]
+```
+
+
+## Cellular Compartment GO terms for DE genes in different classes {.tabset}
+
+```{r CC}
+# exclude pval < 0.05 and enrichment < 1.3
+res_cc <- map2(de_dat, all_detected_genes, ~fisher_topgo(.y, 
+                                    .x, 
+                                    go_list, 
+                                    algo = "parentchild",
+                                    ontology_category = "CC"))
+```
+
+### Medulla Class 1
+
+```{r}
+res_cc[["Medulla1"]]
+```
+
+### Medulla Class 2
+
+```{r}
+res_cc[["Medulla2"]]
+```
+
+### Hypothalamus Class 1
+
+```{r}
+res_cc[["Hypothalamus1"]]
+```
+
+### Hypothalamus Class 2
+
+```{r}
+res_cc[["Hypothalamus2"]]
+```
+
+### Forebrain Class 1
+
+```{r}
+res_cc[["Forebrain1"]]
+```
+
+### Forebrain Class 2
+
+```{r}
+res_cc[["Forebrain2"]]
+```
+
+
+
+## GO terms for genes shared in all brain regions
+
+
+```{r}
+
+fdr_dat <- map(dat, ~dplyr::filter(.x, FDR < 0.01) )
+all_dat <- bind_rows(dat)
+ 
+# find transcripts shared in all three regions for class ! (decrease in torpor)
+class_1_shared_denovo <- dplyr::intersect(dplyr::intersect(fdr_dat[[1]]$gene_ids,
+                 fdr_dat[[3]]$gene_ids),
+  fdr_dat[[5]]$gene_ids)
+
+# find transcripts shared in all three regions for class 2 (decrease in torpor)
+class_2_shared_denovo <- dplyr::intersect(dplyr::intersect(fdr_dat[[2]]$gene_ids,
+                 fdr_dat[[4]]$gene_ids),
+  fdr_dat[[6]]$gene_ids)
+
+class_1_shared_denovo <-  unique(class_1_shared_denovo) %>% 
+                   str_replace("^NA,", "") %>%
+                   .[!str_detect(., ",") & !str_detect(., "^G")]
+
+class_2_shared_denovo <-  unique(class_2_shared_denovo) %>% 
+                   str_replace("^NA,", "") %>%
+                   .[!str_detect(., ",") & !str_detect(., "^G")]
+
+go_class_1 <- map(go_types, ~fisher_topgo(all_present_in_all_libs,
+                                          class_1_shared_denovo, 
+                                              go_list, 
+                                              algo = "parentchild",
+                                              ontology_category = .x))
+
+names(go_class_1) <- go_types
+
+
+go_class_2 <- map(go_types, ~fisher_topgo(all_present_in_all_libs,
+                                          class_2_shared_denovo, 
+                                          go_list, 
+                                          algo = "parentchild",
+                                          ontology_category = .x))
+
+names(go_class_2) <- go_types
+
+
+```
+## Class 1 transcripts shared in all brain regions {.tabset}
+
+### BP
+```{r}
+go_class_1$BP
+```
+
+### MF
+```{r}
+go_class_1$MF
+```
+
+### CC
+```{r}
+go_class_1$CC
+```
+
+## Class 2 transcripts shared in all brain regions {.tabset}
+
+### BP
+```{r}
+go_class_2$BP
+```
+
+### MF
+```{r}
+go_class_2$MF
+```
+
+### CC
+```{r}
+go_class_2$CC
+```
+
+```{r write_out_mrna}
+
+# set geneid and gene_name cols to Text to avoid renaming to dates
+go_class_1 <- map(go_class_1,
+    ~set_xlsx_class(.x, 
+                    c("ensembl_ids", "gene_names"), 
+                    "Text") %>% 
+      set_xlsx_class(., 
+                    "pval", 
+                    "Scientific"))
+
+go_class_2 <- map(go_class_2,
+    ~set_xlsx_class(.x, 
+                    c("ensembl_ids", "gene_names"), 
+                    "Text") %>% 
+      set_xlsx_class(., 
+                    "pval", 
+                    "Scientific"))
+
+openxlsx::write.xlsx(go_class_1, "mrna/shared_class1_go_terms.xlsx")
+openxlsx::write.xlsx(go_class_2, "mrna/shared_class2_go_terms.xlsx")
+```

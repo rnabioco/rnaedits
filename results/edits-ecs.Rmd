@@ -1,0 +1,226 @@
+---
+title: "Editing complementary site identification and free energy"
+author: "Kent Riemondy RBI"
+date: "9/11/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+## Goal
+
+What determines which transcripts are edited in the cold?
+  * structure?
+  * sequence?
+  
+If it is structure then one would expect that the cold edited sites should have more secondary structure than sites that do not have increased edited frequencies. 
+
+If it is sequence that determines editing site selection, then there might be an enriched motif present in the edited transcripts. 
+
+For this analysis I will attempt to investigate the structure question. The approach is as follows:
+
+1) Use blastn to identify the ECS (Editing complementary site) region most strongly basepaired to the editing site (run blastn on 201nt region surrounding editing site against the revers complement of the region 4001nt cented on editing site, select the best alignment (passing a maximum threshold e-value of 0.1) ).
+
+2) Run RNAduplex for the editing site region against the ECS region at 37 degrees and 4 degrees. Compute the differences between 4 and 37 degrees. This method doesn't require standardizing the lengths of the ECS to avoid long helicies from biasing the delta G. 
+
+## Parse blastn results
+
+```{r message=FALSE, warning=FALSE}
+source("globals.R")
+```
+
+```{r parse_blastn}
+blast_cols <- c(
+  "qseqid",
+  "sseqid",
+  "pident",
+  "length",
+  "mismatch",
+  "gapopen", 
+  "qstart", 
+  "qend", 
+  "sstart", 
+  "send", 
+  "evalue", 
+  "bitscore"
+)
+blast_res <- read_tsv("hyperedits/folding/blast_sig_sites_2000nt.txt", 
+                      col_names = blast_cols)
+conserved_blast_res <- read_tsv("hyperedits/folding/blast_nonsig_sites_2000nt.txt",
+                                col_names = blast_cols)
+
+blast_res <- list(
+   sig_sites = blast_res,
+   conserved_sites = conserved_blast_res
+)
+
+blast_res <- map(blast_res,
+                 ~dplyr::mutate(.x, 
+                    chrom = str_match(qseqid, "^([^:]+)::")[, 2],
+                    edit_pos = str_match(qseqid, "::(\\d+)::")[, 2] %>% as.integer(),
+                    start = str_match(qseqid, ":(\\d+)-")[, 2] %>% as.integer(),
+                    end = str_match(qseqid, "-(\\d+)")[, 2] %>% as.integer(),
+                    strand = str_match(qseqid, "([+-])\\)$")[, 2],
+                    q_genomic_start = str_match(sseqid, ":(\\d+)-")[, 2] %>% as.integer(),
+                    q_genomic_end = str_match(sseqid, "-(\\d+)")[, 2] %>% as.integer(),
+                    rel_edit_pos = edit_pos - start - 1))
+
+# only keep blast alignments that overlap the editing site
+overlapped <- map(blast_res, 
+                  ~dplyr::filter(.x,
+                     qstart <= rel_edit_pos, 
+                     qend >= rel_edit_pos))
+
+# make sure that the alignment is at least 20nt long (ADAR needs at least 20bp to edit)
+long <- map(overlapped, 
+            ~dplyr::filter(.x,
+               length >= 20))
+
+# for each site only keep the best alignment based on e-value, or if there are ties, then the longest alignment, or if additional ties, the first element
+
+ecs_regions <- map(long,
+                   ~.x %>% 
+  group_by(qseqid) %>% 
+  dplyr::top_n(1, -evalue) %>% # take top alignmnet with lowest eval
+  dplyr::top_n(1, length) %>% # if ties take longest alignment
+  dplyr::top_n(1, pident) %>% # if ties take best percent alignment
+  dplyr::arrange(qseqid) %>% 
+  dplyr::filter(row_number() == 1) %>% # lastly take first alignment based on sorted site name
+  ungroup())
+```
+
+## Get sequences for ECS and editing site regions
+
+```{r get_seqs}
+fasta <-  path.expand(file.path(db_dir, "ensembl85/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa"))
+
+#consider only folding the duplex alignments rather than full 201 nt of editing site region
+#grab editing site sequences
+seqs <- map(ecs_regions,
+              ~kentr::get_sequences(.x, fasta))
+
+#rename editing site coords 
+seqs <- map(seqs, 
+              ~dplyr::rename(.x,
+                      start_edit = start,
+                      end_edit = end,
+                      header_edit = header,
+                      seq_edit = seq))
+
+#compute position of ECS, in a strand aware fashion
+seqs <- map(seqs, 
+            ~dplyr::mutate(.x,
+               start = ifelse(strand == "+", 
+                              q_genomic_start + sstart - 1 ,
+                              q_genomic_end - send - 1),
+               end = ifelse(strand == "+",
+                            q_genomic_start + send - 1,
+                            q_genomic_end - sstart)))
+
+#grab ECS sequences
+seqs <- map(seqs, 
+            ~kentr::get_sequences(.x, fasta) %>% 
+  dplyr::rename(header_ecs = header,
+                seq_ecs = seq) )
+
+#format into fasta
+seqs_out <- map(seqs, 
+                ~dplyr::select(.x,
+                          qseqid,
+                          seq_edit, 
+                          seq_ecs) )
+
+seqs_out <- map(seqs_out,
+                ~gather(.x, tmp, seq, -qseqid) %>% 
+  dplyr::arrange(qseqid) %>% 
+  dplyr::rename(header = qseqid))
+
+
+walk2(seqs_out, 
+      names(seqs_out),
+     ~kentr::write_fasta(.x, paste0("hyperedits/", .y, '_seqs.out')))
+```
+
+
+## run RNAduplex
+
+RNAcofold allows for inter and intramolecular basepairing between two input molecules. RNAduplex allows only intermolecular basepairs. 
+
+```{bash}
+RNAduplex -T 4  < hyperedits/sig_sites_seqs.out >  hyperedits/sig_fold_4.txt
+RNAduplex -T 37  <  hyperedits/sig_sites_seqs.out >  hyperedits/sig_fold_37.txt
+
+RNAduplex -T 4  <  hyperedits/conserved_sites_seqs.out >  hyperedits/conserved_fold_4.txt
+RNAduplex -T 37  <  hyperedits/conserved_sites_seqs.out >   hyperedits/conserved_fold_37.txt
+```
+
+
+## plot difference between warm and cold rna structures
+
+```{r read_folding_results}
+
+read_rnaduplex <- function(file_in) {
+  res <- read_lines(file_in)
+  headers <- res[startsWith(res, ">")] %>% unique()
+  folding_res <- res[!startsWith(res, ">")]
+  stopifnot(length(headers) == length(folding_res))
+  res <- data_frame(seqname = headers, 
+                    folding_res = folding_res)
+  res <- mutate(res, 
+                delta_g = str_split(folding_res, "\\s") %>%  #split on whitespace and return last element
+                  map_chr(., ~.x[length(.x)]),
+                delta_g = str_replace_all(delta_g, "[\\)\\(]", "") %>% 
+                  as.numeric()) # remove opening and closing parenthesis 
+  res
+}
+
+folding_dat <- c(
+  "hyperedits/sig_fold_4.txt",
+  "hyperedits/sig_fold_37.txt",
+  "hyperedits/conserved_fold_4.txt",
+  "hyperedits/conserved_fold_37.txt"
+)
+
+
+folding_res <- map(folding_dat,
+                   ~read_rnaduplex(.x))
+names(folding_res) <- c(
+  "sig_4",
+  "sig_37",
+  "conserved_4",
+  "conserved_37"
+)
+
+folding_res <- bind_rows(folding_res, .id = "temp")
+folding_res <- tidyr::separate(folding_res, temp, 
+                               c("type", "temp"), sep = "_")
+
+folding_res <- mutate(folding_res, 
+                      type = ifelse(type == "sig",
+                                    "signficant\nsite",
+                                    "conserved\nsite"))
+
+diff_delta_g <- group_by(folding_res, 
+                         type,
+                         seqname) %>% 
+  arrange(temp, .by_group = T) %>% 
+  summarize(
+    delta_g_37 = nth(delta_g, 1),
+    delta_g_4 = nth(delta_g, 2),
+    delta_g_diff = nth(delta_g, 2) - nth(delta_g, 1))
+
+plt <- ggplot(folding_res, aes(temp, delta_g)) + 
+  geom_violin(aes(fill = temp)) +
+  scale_fill_manual(values = c("#D9D9D9", "#525252")) +
+  ylab("RNADuplex delta-G") +
+  facet_wrap(~type)
+plt
+save_plot("edits/rna_duplex.pdf", plt, base_width = 8, base_height = 7)
+ggplot(diff_delta_g, aes(type, delta_g_diff)) + 
+  geom_violin(aes(fill = type)) 
+```
+
+

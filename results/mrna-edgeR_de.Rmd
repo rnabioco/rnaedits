@@ -1,0 +1,753 @@
+---
+title: "EdgeR_analysis_mRNA"
+author: "Kent Riemondy RBI"
+date: "7/31/2017"
+output:
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(lazy.cache = FALSE)
+```
+## Goals
+
+1) Quality control
+2) MDS/PCA/RF plot
+3) Classify into clusters of gene expression
+
+## Examine differential expression using EdgeR to obtain DE per gene
+
+
+```{r}
+# taken from results/2017-07-31/edgeR_analysis
+library(dplyr)
+library(valr)
+library(purrr)
+library(readr)
+library(stringr)
+library(tidyr)
+library(edgeR)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(flexclust)
+library(cluster)
+library(cowplot)
+library(eulerr)
+source("globals.R")
+
+state_cols <-  c(
+  SA = rgb(255, 0, 0, maxColorValue=255),
+  IBA = rgb(67, 205, 128, maxColorValue=255),
+  Ent = rgb(155, 48, 255, maxColorValue=255),
+  LT = rgb(25, 25, 112, maxColorValue=255),
+  Ar = rgb(0, 0, 255, maxColorValue=255),
+  SpD = rgb(255, 165, 0, maxColorValue=255) 
+)
+
+state_order = c(
+  "SA", "IBA", "Ent", "LT", "Ar", "SpD"
+)
+
+#colors for region
+region_cols <- c(
+  Medulla = "#4DAF4A",
+  Hypothalamus = "#377EB8",
+  Forebrain =  "#E41A1C"
+)
+# region order
+region_order <- c("Medulla", "Hypothalamus", "Forebrain")
+
+color_fxn <- colorRampPalette(brewer.pal(9, "Spectral"))
+
+write_gztsv <- function(df, name, ...){
+  # write output as gzipped, supply name without .gz
+  if(str_detect(name, ".gz$")){
+    uncompressed_name <- str_replace(name, ".gz$", "")
+  } else {
+    uncompressed_name <- name
+  }
+  write_tsv(df, uncompressed_name, ...)
+  R.utils::gzip(uncompressed_name, remove = T, overwrite = T)
+}
+```
+
+
+### specify sample information
+```{r}
+# get sample information and counts
+counts <- read_tsv(file.path(data_dir, "featurecounts", "count_summary.tsv"),
+                  skip = 1)
+counts <- as.data.frame(counts)
+rownames(counts) <- counts$Geneid
+gene_info <- counts[, c(1:6)]
+counts <- counts[-c(1:6)] #drop gene interval information
+
+fq_names <- colnames(counts)
+fq_names <- basename(fq_names)
+fq_names <- str_split(fq_names, "_2pass", simplify = T)[, 1]
+colnames(counts) <- fq_names
+
+```
+
+
+```{r}
+# get pdata about animal state
+pdata <- read_tsv(file.path(docs_dir, "BrainRegionRNAseqLibMetadata.txt"))
+pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+  
+pdata <- mutate(pdata, 
+                abbrev_sample = str_split(sample, "_", simplify = T)[, 1]) %>% 
+  dplyr::rename(long_sample = sample)
+
+animal_number <- str_extract(fq_names, "[MHB][0-9]+")
+
+fq_dat <- data_frame(sample = fq_names, 
+                     animal_number)
+
+pdata <- inner_join(fq_dat, 
+                    pdata, 
+                    by = c("animal_number" = "abbrev_sample"))
+
+simplified_pdata <- dplyr::select(pdata, sample, State, region) %>% 
+  unique() %>% 
+  mutate(State = factor(State, 
+                        levels = c("SA", "IBA", "Ent", "LT", "Ar", "SpD")))
+
+```
+
+### Get transcript annotations
+
+```{bash}
+lib="$HOME/Projects/Martin/lib"
+dbases="$HOME/Projects/Martin/dbases"
+results="$HOME/Projects/Martin/results"
+# extract out relevant info to make a look up table from stringtie/taco annotations
+
+if [ ! -s mrna/fixed_all95.bed.gz ] ;
+  then
+    python3 $lib/gtf_to_bed.py \
+      -i $results/2017-06-27/fixed.all95.gtf \
+      -a category gene_id transcript_id ref_gene_id ref_transcript_id gene_name\
+      -c 3 \
+      -o mrna/fixed_all95.bed
+    gzip -f mrna/fixed_all95.bed
+    
+    # extract from ensembl 89 also
+    python3 $lib/gtf_to_bed.py \
+      -i $dbases/ensembl85/Ictidomys_tridecemlineatus.spetri2.89.gtf.gz \
+      -a gene_biotype gene_id transcript_id gene_name \
+      -c 3 \
+      -o mrna/Ictidomys_tridecemlineatus.spetri2.89.bed 
+    gzip -f mrna/Ictidomys_tridecemlineatus.spetri2.89.bed
+fi
+```
+
+```{r get_genes}
+stringtietaco <- read_tsv("mrna/fixed_all95.bed.gz", col_names = F)
+e89 <- read_tsv("mrna/Ictidomys_tridecemlineatus.spetri2.89.bed.gz", col_names = F)
+
+annotations <- list(stringtietaco, e89)
+names(annotations) <- c("denovo", "e89")
+
+annotations  <- map(annotations, ~dplyr::select(.x, -(X1:X6)))
+colnames(annotations[["denovo"]]) <- c("biotype", "denovo_gid", 
+                                       "denovo_tid", "gene_id", 
+                                       "transcript_id", "gene_name", "region")
+colnames(annotations[["e89"]]) <- c("biotype", "gene_id", 
+                                    "transcript_id", "gene_name", "region")
+annotations <- map(annotations, ~dplyr::select(.x, -region) %>% unique())
+
+# map denovo ids to transcript for denovo, remove na containing ids from e89
+annotations[["e89"]] <- filter(annotations[["e89"]], 
+                               !is.na(transcript_id))
+annotations[["denovo"]] <- mutate(annotations[["denovo"]], 
+                                  transcript_id = ifelse(is.na(transcript_id), 
+                                                               denovo_tid,
+                                                               transcript_id))
+# join annotation tables using transcript id
+annotations <- left_join(annotations[["denovo"]],
+                         annotations[["e89"]],
+                         by = "transcript_id",
+                         suffix = c("", "_ensembl"))
+
+#drop transcript ids and merge duplicated annotation fields into csv fields
+annotations <- dplyr::select(annotations, -denovo_tid, -transcript_id)
+annotations <- annotations %>% 
+  group_by(denovo_gid) %>% 
+  summarize(biotypes = valr::values_unique(biotype), 
+            gene_ids = valr::values_unique(gene_id), 
+            gene_names = valr::values_unique(gene_name),
+            gene_name_ensembl = valr::values_unique(gene_name_ensembl),
+            biotypes_ensembl = valr::values_unique(biotype_ensembl))
+
+## get list of geneids and build dataframe of annotations
+annotations <- left_join(data_frame(genes = rownames(counts)), 
+                         annotations, by = c("genes" = "denovo_gid"))
+annotations <- as.data.frame(annotations)
+rownames(annotations) <- annotations$genes
+annotations[, 1] <- NULL
+
+```
+
+```{r}
+#split counts and pdata by region
+
+split_regions <- function(mat, pdata_df, gene_annotations,
+                          selected_region = "Medulla"){
+  keep <- dplyr::filter(pdata_df, region == !!selected_region)
+  samples_to_keep <- keep[["sample"]]
+  states <- keep[["State"]]
+  out_mat <- mat[, colnames(mat) %in% samples_to_keep]
+  DGEList(counts = out_mat, 
+          group = states, 
+          samples = keep,
+          genes = gene_annotations)
+}
+
+edger_objs <- map(region_order, ~split_regions(counts,
+                                 pdata,
+                                 annotations,
+                                 selected_region = .x
+                                 ))
+
+names(edger_objs) <- region_order
+
+map(edger_objs, dim)
+```
+
+### enumerate expressed transcripts per sample
+
+```{r}
+imap_dfr(edger_objs, function(x,y) {
+  num_tx <- colSums(cpm(x) > 2)
+  data_frame(tissue = y,
+             transcript_count_mean = mean(num_tx),
+             transcript_count_sd = sd(num_tx))
+  })
+```
+
+```{r}
+#remove lowly expressed transcripts
+
+filter_genes <- function(edger_obj, 
+                         min_cpm = 2,
+                         min_samples = 4){
+  keep <- rowSums(cpm(edger_obj) > min_cpm) >= min_samples
+  edger_obj <- edger_obj[keep, , keep.lib.sizes=FALSE]
+  edger_obj
+}
+
+edger_objs <- map(edger_objs, 
+                  ~filter_genes(.x))
+
+map(edger_objs, dim)
+```
+
+
+
+```{r}
+run_edger <- function(edger_obj){
+  #set SA as level for design
+  edger_obj$samples$group <- relevel(as.factor(edger_obj$samples$group), "LT")
+  design <- model.matrix(~group, data = edger_obj$samples)
+  edger_obj <- calcNormFactors(edger_obj)
+  edger_obj <- estimateDisp(edger_obj, design, robust = TRUE)
+}
+
+edger_objs <- map(edger_objs, ~run_edger(.x))
+fits <- map(edger_objs, ~glmFit(.x, .x$design))
+# test if any coefficients deviate from zero
+lrts <- map(fits, ~glmLRT(.x, coef = 2:6))
+res <- map(lrts, ~topTags(.x, n = nrow(.x)))
+
+walk2(res, names(res), ~.x$table %>% 
+        tibble::rownames_to_column("denovo_id") %>% 
+        write_tsv(paste0("mrna/", .y, "_lrt_results.txt")))
+```
+
+
+### Plot significant sites (qvalue < 0.01)
+```{r sig_sites}
+
+sig_txs <-  map(res, ~rownames(.x$table[.x$table$FDR < 0.01, ]))
+
+# convert to matrix of normalized TPM values
+mats <- map(edger_objs, ~cpm(.x, normalized.lib.sizes = TRUE))
+
+# write per region matrices to disk 
+walk2(mats, names(mats),
+      ~write.table(.x, paste0("mrna/", .y, "_normalized_counts.txt"), 
+                   quote = F, sep = "\t"))
+
+# log2 and mean center ()
+mean_center <- function(mat) {
+  #log + 1 and mean center
+  mat <- log2(mat + 1)
+  mat <- mat - rowMeans(mat)
+  mat
+}
+
+
+get_sig_heatmap <- function(vector_of_sites, 
+                            data_matrix_to_subset, 
+                            title = "", 
+                            pdata_mat = pdata, ...){  
+  all_sig_sites <- data_matrix_to_subset[rownames(data_matrix_to_subset) %in% vector_of_sites, ]
+
+  n_sites = nrow(all_sig_sites)
+  
+  pdata_mat <- data_frame( "names" = colnames(data_matrix_to_subset)) %>%
+      inner_join(. , pdata_mat, by = c("names" = "sample")) %>%
+      dplyr::select(names, State, region) %>% 
+      unique() %>% 
+      as.data.frame() %>% 
+      arrange(State)
+  
+  reordered_cols <- pdata_mat$names %>% unlist()
+
+  all_sig_sites <- all_sig_sites[, reordered_cols]
+
+  ha2 <- HeatmapAnnotation(df = pdata_mat[c('State', 'region')], 
+                                      col = list(
+                                        region = region_cols,
+                                          State = state_cols
+                                                 ),
+                           annotation_legend_param = list(
+                             State = list(
+                               title = "Hiberation\nState",
+                               at = state_order, labels = state_order)))
+  ht <- Heatmap(all_sig_sites, 
+          show_column_names = FALSE,
+          top_annotation = ha2,
+          row_title = "Transcripts",
+          column_title = paste0(title, "\n", n_sites, " transcripts"),
+          heatmap_legend_param = list(
+            title = "Mean Centered\nLog2"),
+          ...)
+  
+  draw(ht, annotation_legend_side = "left", heatmap_legend_side = "left")
+  
+}
+
+mats <- map(mats, mean_center)
+
+pwalk(list(sig_txs, mats, names(mats)),
+      function(x, y, z) {
+        pdf(paste0(figs_dir[1], "/transcript_heatmap_", z, ".pdf"))
+        get_sig_heatmap(x, y, title = z, pdata_mat = pdata, show_row_names = F, show_row_dend = FALSE)
+        dev.off()
+      })
+
+pwalk(list(sig_txs, mats, names(mats)),
+      function(x, y, z) get_sig_heatmap(x, y, title = z, pdata_mat = pdata, show_row_names = F, show_row_dend = FALSE))
+
+#all_mat <- mean_center(all_mat)
+#get_sig_heatmap(all_sig, all_mat, 
+#                show_row_names = F, show_row_dend = FALSE, 
+#                title = "All Regions\nFDR < 0.01")
+#
+#pdf("transcript_heatmap_allregions.pdf")
+#get_sig_heatmap(all_sig, all_mat, 
+#                show_row_names = F, show_row_dend = FALSE, title = "All Regions\nFDR < 0.01")
+#dev.off()
+```
+
+
+
+
+### Plot ADAR family expression
+
+```{r}
+
+adar <- c(
+ "ADAR",
+ "ADARB1",
+ "ADARB2")
+
+adars <- map(res, ~tibble::rownames_to_column(.x$table,
+                                              "denovo_gid") %>% 
+               dplyr::filter(gene_names %in% adar))
+
+# get gene lengths for FPKM calc
+gene_lengths <- as_data_frame(gene_info) %>% 
+  dplyr::select(Geneid, Length) 
+  
+#reorder to match geneIds in edgeR objs
+gids <- map(edger_objs, ~rownames(.x$genes))
+gene_lengths <- map(gids, 
+           ~left_join(data_frame(Geneid = .x), gene_lengths) %>% 
+             dplyr::pull(Length))
+
+rpkms <- map2(edger_objs, gene_lengths,
+            ~rpkm(.x, gene.length = .y))
+
+denovo_ids <- map(adars, ~pull(.x, denovo_gid)) %>% 
+  unlist() %>% 
+  unique()
+denovo_ids <- denovo_ids[-2]
+# note that G21068 is annotated to ADAR, but is an upstream transcript, not sure if it should be included
+selected_rpkms <- map(rpkms, ~.x[rownames(.x) %in% denovo_ids, ])
+
+# make into tidy format
+selected_rpkms <- map(selected_rpkms, ~as.data.frame(.x) %>% 
+           tibble::rownames_to_column("denovo_gid") %>% 
+           as_data_frame() %>% 
+          tidyr::gather(sample, rpkm, -denovo_gid))
+
+selected_rpkms <- map(selected_rpkms, ~inner_join(.x, simplified_pdata,
+                              by = "sample"))
+
+selected_rpkms <- map2(selected_rpkms, adars, ~inner_join(.x, 
+                              .y,
+                              by = "denovo_gid"))
+
+selected_rpkms <- bind_rows(selected_rpkms, .id = "Region")
+
+selected_rpkms <- mutate(selected_rpkms,
+                         Region = ifelse(Region == "Forebrain",
+                                         "Cerebrum",
+                                         Region))
+# make simple df with FDR
+annot <- selected_rpkms %>% 
+  group_by(Region, denovo_gid) %>% 
+  summarize(
+    gene_names = unique(gene_names),
+    y_pos = max(rpkm) * 1.15,
+    FDR = unique(FDR),
+    FDR = signif(FDR, 3),
+    FDR = paste0("FDR = ", FDR))
+
+ggplot(selected_rpkms, 
+       aes(State, 
+           rpkm)) +
+   geom_jitter(width = 0.25,
+              aes(color = State)) +
+    stat_summary(fun.y = "mean", 
+               fun.ymin = "mean", 
+               fun.ymax= "mean",
+               size = 0.3,
+               width = 0.75,
+               geom = "crossbar") +
+  facet_grid(Region~gene_names) +
+  expand_limits(y = 0) +
+  scale_color_manual(values = state_cols) +
+  geom_text(data = annot, aes(x = 2, 
+                              y = max(y_pos), 
+                              label = FDR ), size = 3) + 
+  labs(y = "FPKM") +
+  ylim(0, max(annot$y_pos) + 2) +
+  theme(
+    axis.text.x = element_text(color = state_cols,
+                               size = 18),
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_blank(),
+    legend.position = "none"
+  )
+
+ggsave("mrna/adar_expression_patterns.pdf",
+       width = 8.5, height = 6)
+ggsave(file.path(figs_dir[1], "adar_expression_patterns.pdf"),
+       width = 8.5, height = 6)
+
+selected_rpkms %>% 
+  group_by(gene_names, State) %>% 
+  summarize(mean = mean(rpkm),
+            sd = sd(rpkm)) %>% 
+  mutate(iba = nth(mean, 2), 
+         sd_iba = nth(sd, 2),
+         percent_deviation_LT = 100 * (mean / iba),
+         sd_deviation_LT = sqrt(sd^2 + sd_iba^2)) %>% 
+  dplyr::filter(State == "LT")
+```
+
+
+### Plot genes for variants to validate
+
+```{r}
+adar <- c(
+ EIF3A = "EIF3A",
+ ZCCHC8 = "ZCCHC8",
+ ZC3H18 = "ZC3H18",
+ NEIL1 = "NEIL1",
+ AMIGO2 = "AMIGO2",
+ GABRA4 = "GABRA4",
+ CHD9 = "ENSSTOG00000006081",
+ FBXW7 = "FBXW7",
+ ZNF483 = "ENSSTOG00000009473",
+ GRIA2 = "GRIA2"
+ )
+
+adars <- map(res, ~tibble::rownames_to_column(.x$table,
+                                              "denovo_gid") %>% 
+               dplyr::filter(grepl(paste0(adar, collapse = "|"), gene_names)))
+
+#cpms <- map(edger_objs, 
+#            ~cpm(.x))
+
+denovo_ids <- map(adars, ~pull(.x, denovo_gid)) %>% 
+  unlist() %>% 
+  unique()
+# remove downstream transcript that is not associated with EIF3A
+denovo_ids <- denovo_ids[!denovo_ids %in% "G6787"]
+selected_rpkms <- map(rpkms, ~.x[rownames(.x) %in% denovo_ids, ])
+
+# make into tidy format
+selected_rpkms <- map(selected_rpkms, ~as.data.frame(.x) %>% 
+           tibble::rownames_to_column("denovo_gid") %>% 
+           as_data_frame() %>% 
+          tidyr::gather(sample, rpkm, -denovo_gid))
+
+selected_rpkms <- map(selected_rpkms, ~inner_join(.x, simplified_pdata,
+                              by = "sample"))
+
+selected_rpkms <- map2(selected_rpkms, adars, ~inner_join(.x, 
+                              .y,
+                              by = "denovo_gid"))
+
+selected_rpkms <- bind_rows(selected_rpkms, .id = "Region")
+
+
+
+
+gene_plot <- function(geneid, rpkms, save = F, title = NULL) {
+  rpkms <- dplyr::filter(rpkms, gene_names == !!geneid)
+  
+  if(!is.null(title)){
+    plt_title = title
+  } else {
+    plt_title = geneid
+  }
+  rpkms <- mutate(rpkms,
+                Region = ifelse(Region == "Forebrain",
+                                "Cerebrum",
+                                Region))
+  
+  # make simple df with FDR
+  annot <- rpkms %>% 
+  group_by(Region, denovo_gid) %>% 
+  summarize(
+    gene_names = unique(gene_names),
+    y_pos = max(rpkm) * 1.15,
+    FDR = unique(FDR),
+    FDR = signif(FDR, 3),
+    FDR = paste0("FDR = ", FDR))
+
+  p <- ggplot(rpkms, 
+       aes(State, 
+           rpkm)) +
+  geom_jitter(width = 0.25,
+              size = 0.5,
+              aes(color = State)) +
+  stat_summary(fun.y = "mean", 
+               fun.ymin = "mean", 
+               fun.ymax= "mean",
+               size = 0.3,
+               width = 0.75,
+               geom = "crossbar") +
+  facet_grid(~Region) +
+  expand_limits(y = 0) +
+  scale_color_manual(values = state_cols) +
+  geom_text(data = annot, aes(x = 3.5, 
+                              y = max(y_pos), 
+                              label = FDR ), size = 2) + 
+  labs(y = "FPKM", title = plt_title) +
+#  ylim(0, max(annot$y_pos) + 20) +
+  theme(
+    axis.text.x = element_text(color = state_cols,
+                               size = 8),
+    axis.text.y = element_text(size = 8),
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 10),
+    strip.text = element_text(size = 8),
+    plot.title = element_text(size = 8),
+    legend.position = "none"
+  )
+  p
+
+#  print(p)
+#  if(save) ggsave(file.path(figs_dir[1], paste0(geneid, ".pdf")), p, width = 7, height = 3)
+}
+
+genes_to_plot <- unique(selected_rpkms$gene_names)
+
+genes_to_plot <- c(
+"NEIL1",                                                
+"CHD9",
+"GABRA4",                                                  
+"EIF3A",                                                  
+"AMIGO2",                                                  
+"ZCCHC8",                                                  
+"ZNF483",                                      
+"GRIA2",                                
+"ZC3H18",                                                  
+"FBXW7"
+)
+
+
+plts <- map2(unique(selected_rpkms$gene_names), 
+             genes_to_plot,
+     ~gene_plot(.x, selected_rpkms, save = T, title = .y))
+
+plt <- plot_grid(plotlist = plts, 
+                 labels = "AUTO", ncol = 2)
+plt
+ggsave(file.path(figs_dir[1], "mRNA_expression_validation_edits.pdf"), plt, width = 8, height = 10)
+```
+
+## plot seasonal edits
+
+```{r seasonal_genes}
+adar <- c(
+ 	PLEKHM2 = "PLEKHM2",
+  SYTL5 = "SYTL5",
+ 	MCF2L2 = "MCF2L2"
+ )
+
+
+adars <- map(res, ~tibble::rownames_to_column(.x$table,
+                                              "denovo_gid") %>% 
+               dplyr::filter(grepl(paste0(adar, collapse = "|"), gene_names)))
+
+cpms <- map(edger_objs, 
+            ~cpm(.x))
+
+denovo_ids <- map(adars, ~pull(.x, denovo_gid)) %>% 
+  unlist() %>% 
+  unique()
+
+selected_rpkms <- map(rpkms, ~.x[rownames(.x) %in% denovo_ids, ])
+
+# make into tidy format
+selected_rpkms <- map(selected_rpkms, ~as.data.frame(.x) %>% 
+           tibble::rownames_to_column("denovo_gid") %>% 
+           as_data_frame() %>% 
+          tidyr::gather(sample, rpkm, -denovo_gid))
+
+selected_rpkms <- map(selected_rpkms, ~inner_join(.x, simplified_pdata,
+                              by = "sample"))
+
+selected_rpkms <- map2(selected_rpkms, adars, ~inner_join(.x, 
+                              .y,
+                              by = "denovo_gid"))
+
+selected_rpkms <- bind_rows(selected_rpkms, .id = "Region")
+
+genes_to_plot <- unique(selected_rpkms$gene_names)
+gene_names <- names(adar[match(genes_to_plot, adar)])
+
+plts <- map2(genes_to_plot,  
+             gene_names,
+     ~gene_plot(.x, selected_rpkms, save = T, .y))
+
+plt <- plot_grid(plotlist = plts, ncol = 3)
+plt
+
+```
+
+
+## Plot ncRNA genes
+
+```{r}
+adar <- c(
+ Rmrp = "ENSSTOG00000017737",
+ Terc = "ENSSTOG00000017358",
+ #RNaseP_nuc = "ENSSTOG00000018579", # RPPH1
+ #miR154 = "ENSSTOG00000019906,ENSSTOG00000025030,ENSSTOG00000026090",
+ Snorna113 = "ENSSTOG00000017051"
+ )
+
+
+#primary miRNA processing is defective
+#JH393414.1:4,739,233-4,817,232 mir-154
+#JH393505.1:1,304,044-1,443,543 mir-138 
+#JH393279.1:6,999,399-7,025,498
+
+# strange transcript extension
+#JH393404.1:937,834-957,214 #GALK1
+
+adars <- map(res, ~tibble::rownames_to_column(.x$table,
+                                              "denovo_gid") %>% 
+               dplyr::filter(grepl(paste0(adar, collapse = "|"), gene_names)))
+
+cpms <- map(edger_objs, 
+            ~cpm(.x))
+
+denovo_ids <- map(adars, ~pull(.x, denovo_gid)) %>% 
+  unlist() %>% 
+  unique()
+
+selected_rpkms <- map(rpkms, ~.x[rownames(.x) %in% denovo_ids, ])
+
+# make into tidy format
+selected_rpkms <- map(selected_rpkms, ~as.data.frame(.x) %>% 
+           tibble::rownames_to_column("denovo_gid") %>% 
+           as_data_frame() %>% 
+          tidyr::gather(sample, rpkm, -denovo_gid))
+
+selected_rpkms <- map(selected_rpkms, ~inner_join(.x, simplified_pdata,
+                              by = "sample"))
+
+selected_rpkms <- map2(selected_rpkms, adars, ~inner_join(.x, 
+                              .y,
+                              by = "denovo_gid"))
+
+selected_rpkms <- bind_rows(selected_rpkms, .id = "Region")
+
+genes_to_plot <- unique(selected_rpkms$gene_names)
+gene_names <- names(adar[match(genes_to_plot, adar)])
+
+plts <- map2(genes_to_plot,  
+             gene_names,
+     ~gene_plot(.x, selected_rpkms, save = T, .y))
+
+plt <- plot_grid(plotlist = plts, ncol = 3)
+plt
+save_plot(file.path(figs_dir[1], "mRNA_expression_ncRNAs.pdf"), plt, base_width = 12, base_height = 4)
+```
+
+
+```{r nono, eval = F}
+de_res <- map(region_order, 
+    ~read_tsv(paste0("mrna/", .x, "_lrt_results.txt")))
+
+de_cpms <- map(region_order, 
+    ~read.table(paste0("mrna/", .x, "_normalized_counts.txt"), row.names = NULL, check.names= F) %>% 
+      dplyr::rename(., denovo_gid = row.names) %>% 
+      as_data_frame() %>% 
+      tidyr::gather(sample, cpm, -denovo_gid))
+
+genes <- c(NONO = "ENSSTOG00000015869",
+           MATR3 = "ENSSTOG00000014746",
+           PSF = "ENSSTOG00000014004")
+
+de_info <- map(de_res, 
+    ~dplyr::filter(.x, grepl(paste0(genes, collapse = "|"), gene_ids)) %>%
+                     dplyr::rename(denovo_gid = denovo_id))
+
+de_cpms <- map(de_cpms, ~inner_join(.x, simplified_pdata,
+                              by = "sample"))
+
+de_cpms <- map2(de_cpms, de_info, ~inner_join(.x, 
+                              .y,
+                              by = c("denovo_gid")))
+
+names(de_cpms) <- region_order
+de_cpms <- bind_rows(de_cpms, .id = "Region")
+
+plts <- map(unique(de_cpms$gene_names), 
+     ~gene_plot(.x, de_cpms, save = T))
+
+plts
+ggsave(file.path(figs_dir[1], "mRNA_expression_p54nrb.pdf"), plts[[3]], width = 8.5, height = 6)
+```
+
+
+## Heatmaps of ncRNA
+

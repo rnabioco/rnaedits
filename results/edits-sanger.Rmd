@@ -1,0 +1,225 @@
+---
+title: "EditingFreqincDNA"
+author: "Sandy Martin and Kent Riemondy"
+date: "September 19, 2017"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("globals.r")
+```
+
+## frequency plots
+This R script brings in the frequency data from rt-PCR amplification of the region of interest for two of the highly edited sites in the cold that were identified by Kent, one in CHD9, the other in FBXW7.  The goal here was to provide evidence to address whether editing actually occurs at low Tb or if it occured during entrance into torpor, perhaps b/c the enzyme that does the edits is cold-sensitive. Here we ask whether the fraction of edited transcript which is effectively zero in both for IBA and Ent (maybe slightly elevated in some samples, really zero in Sp and SA though), increases while the animals are actually torpid.  It does, but see below.
+
+Minor edits to format and ploting by K.R. 
+
+## First read in the data
+
+```{r}
+mydata <- read.csv("edits/editingData4R.txt", sep = "\t")
+mydata
+str(mydata)
+summary(mydata)
+```
+
+## Plots
+start by taking a quick look, but ultimately want to look at boxplot of these data, ideally facets with both the two gene sites
+getting help from https://www.youtube.com/watch?v=n8kYa9vu1l8
+```{r}
+qplot(state, percentG, data = mydata, facets = . ~ site)
+#try actual ggplot
+#first the data, then the plot type, summary/regression/extra annotation
+gp = ggplot(mydata, aes(state, percentG))
+gp = gp + geom_boxplot() + facet_grid(. ~ site)
+gp
+```
+
+##stats
+
+```{r}
+#first subset the data, but note did not need to make the objects
+CHD9 = mydata[mydata$site == "CHD9", ]
+FBX = mydata[mydata$site == "FBXW7", ]
+#check these
+summary(CHD9)
+summary(FBX)
+
+#now stats
+t.test(percentG~ state, data = CHD9)
+
+t.test(percentG~ state, data = FBX)
+```
+
+
+### replot with color palette preferred by Sandy
+```{r replot}
+
+#get stats for plot
+mydata %>% 
+  group_by(site) %>% 
+  do(broom::tidy(t.test(percentG ~ state, data = .))) -> site_stats
+
+# reduce number of digits in pvalue for plotting
+mutate(site_stats,
+       p.value = signif(p.value, 3)) -> site_stats
+
+site_stats
+
+# note state_cols is a global variable defined in globals.R (named vector of state and color)
+
+# add facet label for forebrain
+mydata %>% 
+  mutate(region = "Cerebrum") -> mydata
+
+plt <- ggplot(mydata, aes(state, percentG)) +
+  geom_boxplot(aes(fill = state), outlier.shape = NA) +
+  geom_jitter() + # show all the individual points
+  facet_grid(region~site) +
+  scale_fill_manual(values = c(state_cols, ET = "#780A81")) +
+  geom_text(data = site_stats, 
+            aes(x = 1.5, 
+                y = 105, 
+                label = paste0("p = ", p.value))) +
+  ylab("Editing Frequency (%)") +
+  ylim(0, 105) + 
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(colour = c("#780A81", "#191970")),
+    axis.title.x = element_blank()
+  )
+
+plt
+
+#save_plot("edits/sanger_validation_et_lt.pdf", plt, base_width = 3.5)
+
+plt <- ggplot(mydata, aes(state, percentG)) +
+  geom_jitter(width = 0.25,
+              aes(color = state)) +
+  stat_summary(fun.y = "mean", 
+               fun.ymin = "mean", 
+               fun.ymax= "mean",
+               size = 0.3,
+               width = 0.75,
+               geom = "crossbar") +
+  facet_grid(region~site) +
+  scale_color_manual(values = c(state_cols, ET = "#780A81")) +
+  geom_text(data = site_stats, 
+            aes(x = 1.5, 
+                y = 105, 
+                label = paste0("p = ", p.value))) +
+  ylab("Editing Frequency (%)") +
+  ylim(0, 105) + 
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(colour = c("#780A81", "#191970")),
+    axis.title.x = element_blank()
+  )
+
+plt
+ 
+save_plot("edits/sanger_validation_et_lt.pdf", plt, base_width = 3.5)
+
+```
+##Results 
+
+In both of these two sites the edited frequency increases across the torpor bout despite constant body temperature at ~5oC.  
+
+##Conclusions 
+
+Unfortunately these results do not cleanly distinguish between editing occuring during entrance into torpor or at low Tb.
+Either the editing actually occurs at body temperatures near freezing and thus accumulates across the torpor bout, or the editing occurs at higher temperature and the edited versions of these transcripts are more stable (hence also increase across the torpor bout in relative abundance b/c of loss of unedited versions to degradation). There is already a fair amount of editing within a few hours of torpor entrance, and certainly more by the end of the torpor bout.  So sadly, the two hypotheses cannot be distinguished by these data alone. Could be a combination, where some editing occurs in the cold and some as Tb declines.
+
+##additional thoughts
+Want to know how close do numbers from this analytical method match those from RNAseq? If yes would there be more insight from combining the data?  Can we learn somethign from the absolute numbers of recovered transcripts at this site in the RNA seq data about stability vs new edits?
+
+
+## Additional Analysis (KR)
+
+```{r}
+site_annotation <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_filtered_sites_annotation.txt.gz")
+
+long_prop_dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand",
+                                    "A_G_alleles", "A_G_filtered_sites_proportions_tidy.txt.gz"))
+```
+
+```{r plot_seq_data}
+sites_to_plot <- c(FBXW7 = "JH393499.1::2282179::T",
+                   CHD9 = "JH393285.1::6065218::A")
+
+  
+  tt_dat_med <- filter(long_prop_dat, 
+                       site %in% sites_to_plot,
+                       Region == "Forebrain")
+  
+  
+  plot_dat <- inner_join(site_annotation, 
+                         tt_dat_med, 
+                         by = c("site", "Region"))
+  
+  gene_labels <- names(sites_to_plot)
+  names(gene_labels) <- sites_to_plot
+  
+  plot_dat <- mutate(plot_dat, 
+                State = factor(State, 
+                        levels = state_order),
+                proportion = proportion * 100,
+                Region = ifelse(Region == "Forebrain",
+                                "Cerebrum",
+                                Region))
+    
+  annot <- group_by(plot_dat, site, Region) %>% 
+    summarize(FDR = paste0("p = ", signif(min(FDR), 3)))
+
+p <- ggplot(plot_dat, aes(State, proportion)) +
+ # geom_boxplot(aes(fill = State), outlier.shape = NA) +
+  geom_jitter(width = 0.25,
+            aes(color = State)) +
+  stat_summary(fun.y = "mean", 
+             fun.ymin = "mean", 
+             fun.ymax= "mean",
+             size = 0.3,
+             width = 0.75,
+             geom = "crossbar") +
+  facet_grid(Region ~ site, 
+             labeller = labeller(site = gene_labels)) + 
+  scale_color_manual(values = state_cols, 
+                    guide = guide_legend(nrow = 1)) +
+  geom_text(data = annot, aes(x = 3, y = 105, label = FDR )) + 
+  ylab("Editing Frequency (%)") + 
+  guides(fill = guide_legend(nrow = 2, 
+                             byrow = TRUE)) +
+  theme(legend.position = "none",
+#         strip.text.x = element_text(size = 10),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(colour = state_cols)
+        )
+p
+
+
+out_plt <- plot_grid(plt, p, align = "hv", rel_widths = c(1.4, 2))
+out_plt 
+
+save_plot("edits/sanger_validation_compare_to_seq.pdf", out_plt, 
+          base_width = 8,
+          base_height = 4)
+
+# old boxplot code
+
+#p <- ggplot(plot_dat, aes(State, proportion)) +
+#  geom_boxplot(aes(fill = State), outlier.shape = NA) +
+#  geom_jitter(size = 1) +
+#  facet_grid(Region ~ site, 
+#             labeller = labeller(site = gene_labels)) + 
+#  scale_fill_manual(values = state_cols, 
+#                    guide = guide_legend(nrow = 1)) +
+#  geom_text(data = annot, aes(x = 3, y = 105, label = FDR )) + 
+#  ylab("Editing Frequency (%)") + 
+#  guides(fill = guide_legend(nrow = 2, 
+#                             byrow = TRUE)) +
+#  theme(legend.position = "none",
+##         strip.text.x = element_text(size = 10),
+#        axis.title.x = element_blank(),
+#        axis.text.x = element_text(colour = state_cols)
+#        )
+```

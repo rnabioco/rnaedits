@@ -1,0 +1,824 @@
+---
+title: "Editing site features"
+author: "Kent Riemondy RBI"
+date: "8/28/2017"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+## Examine nucleotide preferences upstream and downstream of editing sites
+
+```{r ,message=FALSE, warning=FALSE, cache = F}
+source("globals.R")
+```
+
+```{r read_in_dat}
+genome <- read_genome(file.path(db_dir, "ensembl85/chrom_sizes.txt"))
+fasta <-  path.expand(file.path(db_dir, "ensembl85", "Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa"))
+
+dat <- read.table("edits/A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz",
+                header = T,
+                sep = "\t", stringsAsFactors = F) %>% as_data_frame()
+
+# make bed like file
+bed <- dplyr::select(dat, 
+              chrom,
+              start, #derived from bed file, zero based
+              end,
+              site,
+              kmeans_cluster, 
+              strand) %>% unique()
+
+slop_bed <- bed_slop(bed, both = 5, genome)
+
+# get sequences and convert Ts to Us
+seqs <- kentr::get_sequences(slop_bed, fasta) %>% 
+  mutate(seq = str_replace_all(seq, "[Tt]", "U"))
+
+class1 <- filter(seqs, kmeans_cluster == 1)
+dir.create("edits/motifs", recursive = T)
+kentr::write_fasta(class1, "edits/motifs/bp10_class1.fasta")
+
+paste0("there are ", nrow(class1), " group 1 editing sites")
+
+class2 <- filter(seqs, kmeans_cluster == 2)
+kentr::write_fasta(class2, "edits/motifs/bp10_class2.fasta")
+
+kentr::write_fasta(seqs, "edits/motifs/bp10_class1and2.fasta")
+
+#### read in not significant sites and get seqs
+dat <- read.table("edits/A_G_filtered_notsignificant_sites_annotation_kmeans.txt.gz",
+                header = T,
+                sep = "\t", stringsAsFactors = F) %>% as_data_frame()
+
+# make bed like file
+bed <- dplyr::select(dat, 
+              chrom,
+              start, #derived from bed file, zero based
+              end,
+              site,
+              strand) %>% unique()
+
+slop_bed <- bed_slop(bed, both = 5, genome)
+
+seqs <- kentr::get_sequences(slop_bed, fasta)  %>% 
+  mutate(seq = str_replace_all(seq, "[Tt]", "U"))
+
+kentr::write_fasta(seqs, "edits/motifs/bp10_nonsig.fasta")
+```
+
+### get editing sites from RADAR db
+
+```{r}
+
+if(!file.exists("edits/motifs/Human_AG_all_hg19_v2.txt.gz")){
+  download.file("http://lilab.stanford.edu/GokulR/database/Human_AG_all_hg19_v2.txt", 
+              "edits/motifs/Human_AG_all_hg19_v2.txt")
+  R.utils::gzip("edits/motifs/Human_AG_all_hg19_v2.txt", remove = T, overwrite = T)
+}
+
+if(!file.exists("edits/motifs/Mouse_AG_all_mm9_v2.txt.gz")){
+  download.file("http://lilab.stanford.edu/GokulR/database/Mouse_AG_all_mm9_v2.txt", 
+              "edits/motifs/Mouse_AG_all_mm9_v2.txt")
+  R.utils::gzip("edits/motifs/Mouse_AG_all_mm9_v2.txt", remove = T, overwrite = T)
+}
+```
+
+```{r}
+
+### human radar database
+dat <- read.table("edits/motifs/Human_AG_all_hg19_v2.txt.gz",
+                header = T,
+                sep = "\t", stringsAsFactors = F) %>% as_data_frame()
+
+fasta <- "~/Projects/shared_dbases/genomes/hg19.fa"
+genome <- read_genome("~/Projects/shared_dbases/genomes/hg19.chrom.sizes")
+# make bed like file
+bed <- dplyr::rename(dat, 
+              chrom = chromosome,
+              start = position
+              ) %>% 
+  dplyr::filter(alu. == "no") %>% #exclude alu editing sites
+  mutate(end = start,
+         start = start - 1) %>% 
+  dplyr::select(chrom, start, end, strand) %>% 
+  unique()
+
+slop_bed <- bed_slop(bed, both = 5, genome)
+
+seqs <- kentr::get_sequences(slop_bed, fasta) %>% 
+  mutate(seq = str_replace_all(seq, "[Tt]", "U"))
+
+#seqs <- filter(seqs, strand == "+")
+kentr::write_fasta(seqs, "edits/motifs/radar_hg19.fasta")
+paste0("there are ", nrow(seqs), " hg19 editing sites")
+```
+
+```{r}
+### mouse data from radar
+
+dat <- read.table("edits/motifs/Mouse_AG_all_mm9_v2.txt.gz",
+                header = T,
+                sep = "\t", stringsAsFactors = F) %>% as_data_frame()
+
+fasta <- "~/Projects/shared_dbases/genomes/mm9.fa"
+genome <- read_genome("~/Projects/shared_dbases/genomes/mm9.chrom.sizes")
+# make bed like file
+bed <- dplyr::rename(dat, 
+              chrom = chromosome,
+              start = position
+              ) %>% 
+  mutate(end = start,
+         start = start - 1) %>% 
+  dplyr::select(chrom, start, end, strand) %>% 
+  unique()
+
+slop_bed <- bed_slop(bed, both = 5, genome)
+
+seqs <- kentr::get_sequences(slop_bed, fasta) %>% 
+  mutate(seq = str_replace_all(seq, "[Tt]", "U"))
+
+#seqs <- filter(seqs, strand == "+")
+kentr::write_fasta(seqs, "edits/motifs/radar_mm9.fasta")
+
+paste0("there are ", nrow(seqs), " mm9 editing sites")
+```
+
+### run weblogo to examine nucleotide preference
+
+```{bash, cache = F}
+for fasta in edits/motifs/*.fasta
+do echo "working on ${fasta}"
+  /Users/kriemo/anaconda2/bin/weblogo \
+    -f $fasta \
+    -D fasta \
+    -c classic \
+    -o ${fasta/.fasta/.png} \
+    -F png_print \
+    -A rna \
+    -U probability \
+    -s large \
+    -t ${fasta/.fasta} \
+    -P  " "
+done
+```
+
+
+
+```{r}
+pngs <- dir("edits/motifs", pattern = "*.png", full.names = T)
+```
+
+```{r, results='asis'}
+# programatically generate links to pngs
+walk(pngs, ~cat("![](", .x, ")\n"))
+```
+
+```{bash pdfs, cache = F}
+for fasta in edits/motifs/radar_hg19.fasta edits/motifs/radar_mm9.fasta edits/motifs/bp10_class1.fasta edits/motifs/bp10_class2.fasta
+do echo "working on ${fasta}"
+  /Users/kriemo/anaconda2/bin/weblogo \
+    -f $fasta \
+    -D fasta \
+    -o ${fasta/.fasta/.pdf} \
+    -F pdf \
+    -A rna \
+    -c classic \
+    -U probability \
+    -s large \
+    -P  " "
+done
+```
+
+```{r copy_files}
+out_files <- c("edits/motifs/radar_mm10.pdf",
+               "edits/motifs/bp10_class1.pdf",
+               "edits/motifs/bp10_class2.pdf")
+file.copy(out_files, figs_dir[2], overwrite = T)
+
+```
+
+
+## Analyze positional distribution of editing sites
+
+Goal: to determine if editing sites are more clustered than expected by chance. clustering of rna editing sites is a common feature of mammalian editing, especially in repeat regions and structured RNAs.
+
+
+```{r read_vcf_to_bed}
+
+cnames <- c("chrom", "start", "comment","ref", "alt", "qual", "filter", "info", "allele")
+
+# read in vcf, drop genotype
+vcf <- read_tsv(file.path(data_dir, "vcf/variant_allele_counts_by_strand/A_G_alleles/filtered.vcf.gz"), 
+                comment = "#", 
+                col_types = c("cicccnccc", rep("-", 90)), col_names = cnames)
+
+# convert to bed (ref == T is negative strand), make zero based
+bed <- dplyr::select(vcf, chrom, start, ref) %>% 
+  dplyr::mutate(strand = ifelse(ref == "A", "+", "-"),
+                end = start,
+                start = start - 1,
+                site = paste0(chrom, "::", end, "::", ref)) %>% 
+  dplyr::arrange(chrom, start) %>% 
+  dplyr::select(chrom, start, end, site, strand) 
+  
+rm(vcf)
+```
+
+
+```{r sig_sites}
+annots <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_filtered_sites_annotation.txt.gz")
+
+fdr_sites <- dplyr::select(annots, site, FDR) %>% 
+  group_by(site) %>% 
+  summarize(minFDR = min(FDR)) %>% 
+  unique()
+```
+
+```{r closest_edit}
+# add in FDR info, restricting to only sites passing filters
+bed <- inner_join(bed, fdr_sites) %>% 
+  mutate(sig = ifelse(minFDR < 0.01,
+                      "significant",
+                      "nonsignificant"))
+
+# just look at sig sites for now
+bed <- filter(bed, sig == "significant")
+# also perform per geneic annotation with genes with > 1 site. 
+
+## get transcript boundaries for grouping edits into transcripts
+stringtietaco <- read_tsv(file.path(db_dir, "denovo_annotation/fixed.all95.gtf"), 
+                     col_names = F) 
+stringtietaco <- dplyr::select(stringtietaco, 
+                        X1, X4, X5, X8, X6, X7, X2, X3, X9 ) %>% 
+  mutate(X4 = X4 - 1) 
+
+cnames <- c("chrom", "start", "end", "name", "score", "strand", 
+            "source", "region", "attr")
+colnames(stringtietaco) <- cnames
+stringtietaco <- mutate(stringtietaco,
+                        geneid = str_match(attr, 
+                                           "gene_id \\\"([^;]+)\\\";")[, 2] ) %>% 
+  filter(grepl("exon|transcript", region))
+
+
+bed <- group_by(bed, strand)
+stringtietaco <- group_by(stringtietaco, strand)
+edits_transcripts <- valr::bed_intersect(bed,
+                  stringtietaco)
+
+# determine if edit overlaps an intron or exon
+group_by(edits_transcripts, chrom, start.x, end.x, site.x, strand.x, minFDR.x, sig.x) %>% 
+  mutate(overlaping_region = ifelse("transcript" %in% region.y && "exon" %in% region.y,
+                                    "exon",
+                                    "intron")) %>% 
+  dplyr::select(geneid.y, overlaping_region) %>% 
+  ungroup() -> edits_transcripts
+
+# pull in all exonic regions from overlapping genes or transcript regions for intronic overlaps
+edits_transcripts <- left_join(edits_transcripts, stringtietaco, 
+          by = c("geneid.y" = "geneid"))
+
+# filter to select exons or transcript
+edits_transcripts <- filter(edits_transcripts, 
+                            overlaping_region == "exon" & region == "exon" |
+                              overlaping_region == "intron" & region == "transcript") %>% 
+  unique()
+
+# drop unnecessary cols
+edits_transcripts <- dplyr::select(edits_transcripts, 
+                            chrom.x:strand) %>% 
+  dplyr::select(-name, -score) %>% 
+  dplyr::rename(
+    start.y = start,
+    end.y = end,
+    strand.y = strand,
+    chrom = chrom.x, 
+    start = start.x,
+    end = end.x,
+    strand = strand.x) %>% 
+  unique()
+
+#merge gene_ids
+group_by(edits_transcripts, chrom, start, end, 
+         site.x, strand, minFDR.x, sig.x) %>% 
+  mutate(gene_ids = values_unique(geneid.y)) %>% 
+  ungroup() -> edits_transcripts
+
+# summarize which gene each edit is associated with
+edits_tx_summary <- tidyr::nest(edits_transcripts,
+                              -c(chrom, start, end, site.x, 
+                                 strand, minFDR.x, sig.x, gene_ids)) 
+  
+# find closest edit within the same gene_id
+edits_tx_summary <- edits_tx_summary %>% 
+  group_by(gene_ids, strand) 
+
+edits_tx_closest <- bed_closest(edits_tx_summary, edits_tx_summary,
+                                suffix = c("_first", "_second"))
+
+# remove overlaps and use adjacent features
+edits_closest_dist <- filter(edits_tx_closest, .overlap < 1) %>% 
+  group_by(chrom, start_first, end_first, site.x_first, strand_first, gene_ids_first, 
+           start_second, end_second) %>% 
+  mutate(closest_edit = min(abs(.dist)))
+  
+
+# group by strand
+edits_closest <- ungroup(edits_closest_dist) %>% 
+  dplyr::rename(start = start_first,
+         end = end_first,
+         strand = strand_first) %>% 
+  group_by(strand)
+
+#rename cols in overlapping features
+
+edits_closest <- mutate(edits_closest, 
+         data_first = map2(data_first, chrom, 
+                           ~mutate(.x, 
+                                   chrom = .y) %>% 
+                             dplyr::rename(start = start.y,
+                                    end = end.y,
+                                    strand = strand.y)))
+#merge intervals, keep strand
+edits_closest <- mutate(edits_closest, 
+        data_first = map(data_first, 
+                         ~bed_merge(.x, strand = values_unique(strand))))
+
+# add in sequences to dataframe
+edits_closest <- mutate(edits_closest, 
+        data_first = map(data_first, 
+                         ~kentr::get_sequences(.x, 
+                                              fasta_path = file.path(db_dir, "ensembl85/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa"))))
+
+# sort bed ivl, then splice sequences together
+# need to keep track of genomic location of each sequence for reporting shuffled edit position
+
+pos_shuffled_edits <- edits_closest
+pos_shuffled_edits <- mutate(pos_shuffled_edits, 
+               tmp_dat = map(data_first, 
+                                 ~mutate(.x, 
+       a_loc = str_locate_all(seq, "A"), # find A's in each bin
+       genome_loc = map2(a_loc, start, ~.x + .y) # convert to genome coords 
+       ) %>% 
+         summarize(positions = list(unlist(genome_loc)))))
+
+pos_shuffled_edits <- mutate(pos_shuffled_edits,
+       tmp_dat = flatten(tmp_dat),
+       tmp_dat = flatten(tmp_dat))# combine all locations into 1 vector
+
+#sample genomic position from list of positions 
+set.seed(20170731)
+pos_shuffled_edits <- mutate(pos_shuffled_edits,
+       start = map(tmp_dat, ~sample(.x, 1)) %>% unlist(),
+       end = start + 1) %>% 
+  dplyr::select(-tmp_dat)
+
+```
+
+```{r}
+gnome <- read_genome(file.path(db_dir, "ensembl85/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa.fai"))
+
+## need to randomly select an A from the seq
+
+#shuffed <- edits_closest
+
+#shuff_seq <- function(input_seq, input_ivl){
+#  a_locations <- str_locate_all(input_seq, "A")
+#  shuff_a_idx <- sample(a_locations$start, 1)
+  
+#}
+
+#shuff_within <- function(input_df, shuff_df, genome){
+#  df <- data_frame(chrom = input_df$chrom, 
+#                   start = shuff_df$start, 
+#                   end = shuff_df$end, 
+#                   strand = input_df$strand)
+#  bed_shuffle(input_df, genome, incl = df)
+#}
+
+# this is super long (~5 min) due to calling bed_shuffle ~5000 times independently
+
+#for(i in seq_along(seq_along(edits_closest$chrom))){
+#  shuffed[i, ] <- shuff_within(edits_closest[i, ],      edits_closest$data_first[[i]], 
+##                               genome = gnome)
+#}
+
+shuf_tx_closest <- bed_closest(pos_shuffled_edits, 
+                               pos_shuffled_edits,
+                                suffix = c("_first", "_second"))
+
+# remove overlaps and use adjacent features
+shuf_closest <- filter(shuf_tx_closest, .overlap < 1) %>% 
+  group_by(chrom, start_first, end_first, site.x_first_first, strand_first) %>% 
+  summarize(closest_edit = min(abs(.dist)))
+
+write_tsv(shuf_closest, "edits/shuffled_editing_sites.txt")
+
+edits_closest %>% 
+  dplyr::select(chrom:strand, 
+                gene_ids_first,
+                start_second,
+                end_second,
+                .overlap,
+                .dist,
+                closest_edit) -> closest_out
+write_tsv(closest_out, "edits/closest_editing_sites.txt")
+#make df for plotting
+clustered_df <- data_frame(`Class I\nEditing Sites` = edits_closest$closest_edit,
+                           `Shuffled\nSites` = c(shuf_closest$closest_edit,
+                                                  rep(NA, nrow(edits_closest) - nrow(shuf_closest))))
+clustered_df <- gather(clustered_df, key, value)
+
+#valr reports adjacent sites as having a distance of 0, so add 1 to all dists
+clustered_df <- mutate(clustered_df, 
+                       value = value + 1)
+
+
+ggplot(clustered_df, aes(key, log10(value))) +
+  geom_boxplot(aes(fill = key)) +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(y = expression(paste("Distance to closest site (log"[10],")",
+                            sep = ""))) + 
+  theme(axis.title.x = element_blank(),
+        legend.position = "none")
+
+ggsave("edits/closest_edits.pdf", width = 2.5, height = 4)
+
+#fig 2e
+file.copy("edits/closest_edits.pdf", 
+          figs_dir[2], overwrite = T)
+```
+
+
+```{r number_of_clustered_sites}
+sig_edits <- read_bed("edits/sig_edits.bed", n_fields = 6)
+# find sites within 100nt. 
+bed_cluster(group_by(sig_edits, strand), max_dist = 100) %>%
+  group_by(.id) %>% 
+  mutate(n_edits = n()) %>% 
+  ungroup() -> edit_clustered
+
+
+dplyr::filter(edit_clustered, 
+              n_edits > 2)
+
+```
+## Determine conservation of editing sites  
+
+  Identified RNA editing sites will be compared to known editing sites in mouse and human RADAR databases. The [RADAR database](http://rnaedit.com/about/) has rna editing sites for mouse and human. The mouse data is probably more relevant but there are fewer sites (~8000 mouse versus 2 million human). The mouse data is the mm9 assembly and there is only a squirrel to mm10 liftover, so a sequential liftover is necessary. The human data is hg19 so a liftover from mm10 to hg19 can be done.
+  
+  Additionallly there is a database of editings sites conserved across mammals (human, mouse, rat, cow, opossum, and platypus data) taken from a [paper](https://doi.org/10.1186/gb-2014-15-1-r5) from Erez Levanon's lab
+
+```{r dat}
+genome <- read_genome(file.path(db_dir, "ensembl85/chrom_sizes.txt"))
+fasta <-  path.expand(file.path(db_dir, "ensembl85/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa"))
+
+dat <- read.table("edits/A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz",
+                header = T,
+                sep = "\t", 
+                stringsAsFactors = F) %>% as_data_frame()
+
+# make bed like file
+bed <- dplyr::select(dat, 
+              chrom,
+              start, #derived from bed file, zero based
+              end,
+              site,
+              kmeans_cluster, 
+              strand) %>% unique()
+
+# need to strip the ".1" suffix from the chromosomes to compare to UCSC dbs
+
+bed <- mutate(bed,
+              chrom = str_replace(chrom, ".1$", ""))
+
+write_bed <- function(bed, outname){
+  # prevent writing as scientifc 
+  res <- map_df(bed, ~format(.x, scientific = F))
+  write.table(res, paste0(outname, ".bed"), 
+              quote = F, col.names = F,
+              sep = "\t",
+              row.names = F)
+}
+
+write_bed(bed, "edits/sig_edits")
+
+
+dat <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_all_sites_raw_counts.txt.gz")
+
+# make bed like file
+bed <- dplyr::select(dat, 
+              `#chrom`,
+              pos, #derived from bed file, zero based
+              edit_site) %>% 
+  unique() %>% 
+  dplyr::rename(chrom = `#chrom`,
+                site = edit_site) %>% 
+  mutate(start = pos - 1,
+         end = pos,
+         strand = ifelse(str_detect(site, "T$"),
+                                    "-",
+                                    "+"),
+         score = 0) %>% 
+  dplyr::select(chrom, 
+         start, 
+         end,
+         site,
+         score,
+         strand)
+
+# need to strip the ".1" suffix from the chromosomes to compare to UCSC dbs
+
+bed <- mutate(bed,
+              chrom = str_replace(chrom, ".1$", ""))
+
+write_bed(bed, "edits/all_edits")
+```
+
+### get editing sites from RADAR db and liftOver chains
+
+ 
+
+```{r}
+
+if(!file.exists("edits/mm10ToMm9.over.chain.gz")){
+  download.file("http://hgdownload.soe.ucsc.edu/goldenPath/mm10/liftOver/mm10ToMm9.over.chain.gz", 
+              "edits/mm10ToMm9.over.chain.gz")
+}
+
+
+if(!file.exists("edits/speTri2ToMm10.over.chain.gz")){
+  download.file("http://hgdownload.soe.ucsc.edu/goldenPath/speTri2/liftOver/speTri2ToMm10.over.chain.gz", 
+              "edits/speTri2ToMm10.over.chain.gz")
+}
+
+
+if(!file.exists("edits/mm10ToHg19.over.chain.gz")){
+  download.file("http://hgdownload.soe.ucsc.edu/goldenPath/mm10/liftOver/mm10ToHg19.over.chain.gz", 
+              "edits/mm10ToHg19.over.chain.gz")
+}
+
+if(!file.exists("edits/Mouse_AG_all_mm9_v2.txt.gz")){
+  download.file("http://lilab.stanford.edu/GokulR/database/Mouse_AG_all_mm9_v2.txt", 
+              "edits/Mouse_AG_all_mm9_v2.txt")
+  R.utils::gzip("edits/Mouse_AG_all_mm9_v2.txt", remove = T, overwrite = T)
+}
+
+if(!file.exists("edits/Human_AG_all_hg19_v2.txt.gz")){
+  download.file("http://lilab.stanford.edu/GokulR/database/Human_AG_all_hg19_v2.txt", 
+              "edits/Human_AG_all_hg19_v2.txt")
+  R.utils::gzip("edits/Human_AG_all_hg19_v2.txt", remove = T, overwrite = T)
+}
+
+
+#Mammalian conserved ADAR targets comprise only a small fragment of the human editosome
+#Yishay Pinto, Haim Y Cohen and Erez Y Levanon
+#supplement 1
+
+url <- "https://static-content.springer.com/esm/art%3A10.1186%2Fgb-2014-15-1-r5/MediaObjects/13059_2013_3196_MOESM1_ESM.xlsx"
+base_file <- basename(url)
+base_file <- file.path("edits/", base_file)
+
+if(!file.exists(base_file)){
+  download.file(url, base_file)
+}
+```
+
+```{bash}
+# run sequential liftovers to generate comparable assemblies
+lo="$HOME/bin/kent/liftOver"
+dir="edits/"
+$lo $dir/sig_edits.bed $dir/speTri2ToMm10.over.chain.gz $dir/mm10_edits.txt un.txt
+$lo $dir/mm10_edits.txt $dir/mm10Tohg19.over.chain.gz $dir/hg19_edits.txt un3.txt
+$lo $dir/mm10_edits.txt $dir/mm10ToMm9.over.chain.gz $dir/mm9_edits.txt un2.txt
+
+$lo $dir/all_edits.bed $dir/speTri2ToMm10.over.chain.gz $dir/mm10_alledits.txt un.txt
+$lo $dir/mm10_alledits.txt $dir/mm10Tohg19.over.chain.gz $dir/hg19_alledits.txt un3.txt
+$lo $dir/mm10_alledits.txt $dir/mm10ToMm9.over.chain.gz $dir/mm9_alledits.txt un2.txt
+
+rm un.txt un3.txt un2.txt
+```
+
+```{r}
+radar_mm9 <- read_tsv("edits/Mouse_AG_all_mm9_v2.txt.gz")
+
+# convert to zero based and make bed-like
+
+radar_mm9 <- dplyr::rename(radar_mm9, 
+                chrom = chromosome,
+                start = position) %>% 
+  mutate(end = start,
+         start = start - 1) %>% 
+  dplyr::select(chrom, start, end, gene, annot1, strand, everything())
+```
+
+```{r}
+radar_hg19 <- read_tsv("edits/Human_AG_all_hg19_v2.txt.gz")
+
+# convert to zero based and make bed-like
+
+radar_hg19 <- dplyr::rename(radar_hg19, 
+                chrom = chromosome,
+                start = position) %>% 
+  mutate(end = start,
+         start = start - 1) %>% 
+  dplyr::select(chrom, start, end, gene, annot1, strand, everything())
+```
+
+```{r}
+# read in liftedover squirrel edits
+
+mm9_edits <- read_tsv("edits/mm9_edits.txt", 
+                  col_names = c("chrom", "start", "end",
+                                "site", "score", "strand"))
+
+hg19_edits <- read_tsv("edits/hg19_edits.txt", 
+                  col_names = c("chrom", "start", "end",
+                                "site", "score", "strand"))
+
+shared_mouse_sig_edits <- bed_intersect(radar_mm9, mm9_edits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+
+shared_human_sig_edits <- bed_intersect(radar_hg19, hg19_edits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+```
+
+### Conserved Mammalian edits
+```{r}
+conserved <- readxl::read_excel("edits/13059_2013_3196_MOESM1_ESM.xlsx")
+conserved <- dplyr::select(conserved, 
+                    `human, hg19`, X__3,
+                    X__4, gene, region) %>% 
+  unique() %>% 
+  dplyr::rename(chrom = `human, hg19`,
+                start = X__3,
+                end = X__4)
+
+
+shared_mammal_sig_edits <- bed_intersect(conserved, hg19_edits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+```
+
+```{r}
+mm9_alledits <- read_tsv("edits/mm9_alledits.txt", 
+                  col_names = c("chrom", "start", "end",
+                                "site", "score", "strand"))
+
+hg19_alledits <- read_tsv("edits/hg19_alledits.txt", 
+                  col_names = c("chrom", "start", "end",
+                                "site", "score", "strand"))
+
+shared_mouse_all_edits <- bed_intersect(radar_mm9, mm9_alledits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+shared_human_all_edits <- bed_intersect(radar_hg19, hg19_alledits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+
+
+shared_mammal_all_edits <- bed_intersect(conserved, hg19_alledits) %>% 
+  filter(.overlap == 1) %>% 
+  dplyr::rename(start = start.x,
+         end = end.x)
+
+anti_join(conserved, shared_mammal_all_edits, 
+           by = c("chrom", "start", "end")) -> conserved_sites_not_found
+```
+
+```{r, rows.print = 20}
+
+human_all <- list(radar_hg19, hg19_alledits, shared_human_all_edits)
+human_all <- map(human_all, 
+                 ~str_c(.x$chrom, .x$start, .x$end, sep = "::") %>% unique())
+names(human_all) <- c("RADAR hg19", "LiftOver All Sites from Squirrel to hg19", "Shared")
+
+
+mouse_all <- list(radar_mm9, mm9_alledits, shared_mouse_all_edits)
+mouse_all <- map(mouse_all, 
+                 ~str_c(.x$chrom, .x$start, .x$end, sep = "::") %>% unique())
+names(mouse_all) <- c("RADAR mm9", "LiftOver All Sites from Squirrel to mm9", "Shared")
+
+human_sig <- list(radar_hg19, hg19_edits, shared_human_sig_edits)
+human_sig <- map(human_sig, 
+                 ~str_c(.x$chrom, .x$start, .x$end, sep = "::") %>% unique())
+names(human_sig) <- c("RADAR hg19", "LiftOver Significant Sites from Squirrel to hg19", "Shared")
+
+
+mouse_sig <- list(radar_mm9, mm9_edits, shared_mouse_sig_edits)
+mouse_sig <- map(mouse_sig, 
+                 ~str_c(.x$chrom, .x$start, .x$end, sep = "::") %>% unique())
+names(mouse_sig) <- c("RADAR mm9", "LiftOver Significant Sites from Squirrel to mm9", "Shared")
+
+si <- list(human_all, mouse_all, human_sig, mouse_sig)
+si <- at_depth(si, 2, ~length(.x))
+si <- map(si, ~as_data_frame(.x))
+si <- map(si, ~t(.x) %>% as.data.frame() %>% 
+            tibble::rownames_to_column("Type"))
+si <- bind_rows(si)
+
+si
+```
+
+## editing sites conserved {.tabset}
+
+### All edits found in mouse
+```{r}
+shared_mouse_all_edits
+```
+
+### All edits found in humans
+```{r}
+shared_human_all_edits
+```
+
+### Significant edits found in mouse
+```{r}
+shared_mouse_sig_edits
+```
+
+### Significant edits found in humans
+```{r}
+shared_human_sig_edits
+```
+
+### Conserved mammalian sites significant
+```{r}
+shared_mammal_sig_edits
+```
+
+### Conserved mammalian sites all
+```{r}
+shared_mammal_all_edits
+```
+
+### Conserved mammalian sites not found
+```{r}
+conserved_sites_not_found
+```
+
+## conservation summary
+There are `r formatC(nrow(shared_mouse_all_edits), big.mark = ",")` squirrel editing sites that are found in the mouse RADAR database out of `r formatC(nrow(mm9_alledits), big.mark = ",")` lifted over sites. 
+
+
+There are `r formatC(nrow(shared_human_all_edits), big.mark = ",")` squirrel editing sites that are found in the human RADAR database out of `r formatC(nrow(hg19_alledits), big.mark = ",")` lifted over sites. 
+
+The database of conserved mammalian edits contains `r nrow(conserved)` sites, of which there are `r nrow(shared_mammal_all_edits)` found in the squirrel, `r nrow(shared_mammal_sig_edits)` of these sites are also called significant.
+
+
+### write to txt
+
+```{r write_out_conserved_edits}
+
+edits <- list(
+  shared_mouse_all_edits,
+  shared_human_all_edits,
+  shared_mouse_sig_edits,
+  shared_human_sig_edits,
+  shared_mammal_sig_edits,
+  shared_mammal_all_edits,
+  conserved_sites_not_found
+)
+names(edits) <- c(
+  "shared_mouse_all_edits",
+  "shared_human_all_edits",
+  "shared_mouse_sig_edits",
+  "shared_human_sig_edits",
+  "shared_mammal_sig_edits",
+  "shared_mammal_all_edits",
+  "conserved_sites_not_found"
+)
+map2(edits, 
+     names(edits),
+     ~write_tsv(.x, paste0("edits/", .y, ".txt")))
+
+```
+
+### write to xcel workbook
+
+```{r}
+# set geneid and gene_name cols to Text to avoid renaming to dates
+edits[1:6] <- map(edits[1:6],
+    ~set_xlsx_class(.x, 
+                    "gene.x", 
+                    "Text"))
+edits[7] <- map(edits[7],
+    ~set_xlsx_class(.x, 
+                    "gene", 
+                    "Text"))
+
+openxlsx::write.xlsx(edits, "edits/editing_site_conservation.xlsx")
+
+```

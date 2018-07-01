@@ -1,0 +1,936 @@
+---
+title: "pvalues of each group"
+author: "Kent Riemondy RBI"
+date: "10/26/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+## Test for editing differences between warm in cold
+```{r}
+source("globals.R")
+library(scales)
+```
+
+```{r get_pdata}
+
+get_groups <- function(matrix_dat, regex_for_fastq, 
+                       ref_nt, alt_nt, 
+                       pdata_file = file.path(docs_dir,
+                                              "BrainRegionRNAseqLibMetadata.txt")) {
+ # make_groups
+  g_names <- colnames(matrix_dat)
+  animal_number <- str_extract(g_names, regex_for_fastq)
+  
+  allele_type <- rep(c(ref_nt, alt_nt), each = 30)
+  groups <- data_frame(g_names, animal_number, allele_type)
+  
+  pdata <- readr::read_tsv(pdata_file)
+  
+  pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+  
+  pdata <- mutate(pdata, 
+                  abbrev_sample = str_split(sample, "_", simplify = T)[, 1])
+  
+  pdata <- inner_join(groups, 
+                      pdata, 
+                      by = c("animal_number" = "abbrev_sample")) %>%
+    dplyr::select(g_names, animal_number, allele_type, State)
+  pdata <- mutate(pdata,
+                  temp = ifelse(str_detect(State,
+                                           "IBA|SA|Ent|SpD"),
+                                "warm",
+                                "cold"))
+    
+  pdata
+}
+
+regexes <- paste0(c("M", "H", "B"), "[0-9]+")
+
+mat <- read_tsv(file.path("edits",
+                          "variant_allele_counts_by_strand",
+                          "A_G_alleles",
+                          "A_G_filtered_sites_raw_counts_wide.txt.gz"))
+
+hmat <- read_tsv(file.path("hyperedits",
+                          "diffedits",
+                          "A_G_filtered_sites_raw_counts_wide.txt.gz"))
+
+# check same columns
+all(colnames(mat) == colnames(hmat))
+
+# next keep sites from hyperediting if not found in gatk pipeline (although the values are the same)
+mat_sites <- mat$edit_site[mat$edit_site %in% hmat$edit_site]
+hmat <- hmat[!hmat$edit_site %in% mat_sites, ]
+
+mat <- bind_rows(mat, hmat)
+
+mats <- map(regexes, 
+            ~mat %>% 
+              dplyr::select(edit_site, matches(.x)) %>% 
+              as.data.frame() %>% 
+              tibble::column_to_rownames("edit_site"))
+names(mats) <- region_order
+ref <- "A"
+alt <- "G"
+pdata_groups <- map2(mats, 
+                     regexes, 
+                     ~get_groups(.x, .y, ref, alt))
+
+# exclude Ent samples as they represent an ambiguous state
+
+map(pdata_groups,
+    ~dplyr::filter(.x,
+                   State == "Ent") %>% 
+      dplyr::pull(g_names)) -> libs_to_exclude
+
+map2(mats, 
+    libs_to_exclude,
+    ~.x[!colnames(.x) %in% .y]) -> mats
+
+map(pdata_groups,
+    ~dplyr::filter(.x,
+                   State != "Ent")) -> pdata_groups
+
+```
+
+
+```{r}
+# extract library sizes from # of uniquely mapped reads
+.dir <- file.path(data_dir, "star")
+star_report_files <- dir(.dir, 
+                         pattern = "*_2pass_Log.final.out",
+                         recursive = T, full.names = T)
+
+star_reports <- map(star_report_files, 
+                    ~read_tsv(.x, col_names = F))
+
+star_report_names <- basename(star_report_files) %>% 
+  str_replace(., "_2pass_Log.final.out", "")
+
+names(star_reports) <- star_report_names
+lib_sizes <- map(star_reports, 
+                 ~dplyr::filter(.x, 
+                                X1 == "Uniquely mapped reads number |") %>% 
+                   dplyr::select(X2))
+
+lib_sizes <- bind_rows(lib_sizes, .id = "library") %>% 
+  dplyr::rename(lib_size = X2) %>% 
+  dplyr::mutate(lib_size = as.numeric(lib_size))
+
+
+extract_lib_sizes <- function(matrix_dat, lib_sizes_df) {
+  #get original mapped to exons count for selected libraries
+  .names <- colnames(matrix_dat)
+  .names <- str_replace(.names, "_counts.txt.gz_a$", "")
+  .names <- str_replace(.names, "_counts.txt.gz_b$", "")
+  .names <- data_frame(original_name = .names)
+  sizes <- inner_join(.names, lib_sizes_df, 
+                      by = c("original_name" = "library"))
+  res <- dplyr::select(sizes, lib_size) %>% unlist()
+  names(res) <- sizes[["library"]]
+  res
+}
+
+lib_sizes <- map(mats, 
+                 ~extract_lib_sizes(.x, lib_sizes))
+```
+
+```{r build_design_matrices}
+# design for testing explictly warm vs cold 
+# warm = SA, IBA, Ent, SpD
+# cold = LT and Ar
+
+get_design_matrix <- function(pdata, ref_nt){
+
+  #set up design matrix
+  design <- model.matrix(~0 + animal_number + temp:allele_type, data = pdata)
+  design <- design[,!grepl(paste0("allele_type", ref_nt), colnames(design))]
+  design
+}
+
+design_matrices <- map(pdata_groups, ~get_design_matrix(.x, ref))
+
+```
+
+
+```{r initialize_edger_objs}
+
+get_edger_objs <- function(matrix_dat, pdata, lib_size){
+  dge <- DGEList(matrix_dat, group = pdata$temp, lib.size = lib_size)
+  keep <- rowSums(getCounts(dge)>5, na.rm = T) >= 4
+  dge <- dge[keep, , keep.lib.sizes=TRUE]
+  dge
+}
+
+edger_objs <- pmap(list(mats, pdata_groups, lib_sizes),
+                   function(x, y, z) get_edger_objs(x, y, z))
+
+```
+
+### run normalization and DE analysis
+```{r normalize_objs}
+  
+norm_edger_objs <- function(edger_obj, design_matrix) {
+  #obtain normalization values for Reference alleles and propagate to ALT alleles
+  dge_subset <- calcNormFactors(edger_obj[, 1:25, keep.lib.sizes = TRUE])
+  edger_obj$samples$norm.factors <- rep(dge_subset$samples$norm.factors, 2)
+  
+  edger_obj <- estimateDisp(edger_obj, design_matrix)
+  edger_obj
+}
+
+edger_objs <- map2(edger_objs, 
+                   design_matrices, 
+                   ~norm_edger_objs(.x, .y))
+```
+
+```{r set_up_glms}
+get_topTags <- function(dge, design, alt_nt){
+  
+  fit <- glmFit(dge, design)
+ 
+    #set up contrasts to test for cold versus warm
+  colnames(design) <- str_replace(colnames(design), ":", ".")
+  
+
+  .cons <- "tempcold.allele_typeG-tempwarm.allele_typeG"
+  
+  .contrasts <- makeContrasts(
+                        contrasts = .cons,
+                        levels = design)
+  
+  con <- glmLRT(fit, contrast = .contrasts)
+  
+  con <- topTags(con, n = nrow(con))
+  
+  con <- as.data.frame(con)
+  
+  tibble::rownames_to_column(con, "site")
+}
+
+de_results <- map2(edger_objs, design_matrices, 
+                   ~get_topTags(.x, .y, alt))
+
+```
+
+
+```{r save_objects}
+system("mkdir -p edits/warm_v_cold_edits")
+
+walk2(de_results,
+     names(de_results),
+     ~write_gztsv(.x,
+              file.path("edits",
+                        "warm_v_cold_edits",
+                        paste0(.y,
+                        "_deresults.tsv"))))
+
+cpms <- map(edger_objs, 
+             ~cpm(.x, normalized.lib.sizes = T))
+names(cpms) <- c("Medulla",
+                     "Hypothalamus",
+                     "Forebrain")
+
+walk2(cpms, names(cpms), 
+     ~as.data.frame(.x) %>% 
+       tibble::rownames_to_column("site") %>% 
+       write_gztsv(., file.path("edits",
+                           "warm_v_cold_edits",
+                           paste0(.y,
+                           "_normalized_cpms.txt"))))
+
+```
+
+```{r read_objs}
+
+de_dat <- map(region_order, 
+    ~read_tsv(file.path("edits",
+                        "warm_v_cold_edits",
+                        paste0(.x,
+                        "_deresults.tsv.gz"))))
+
+map(de_dat,
+    ~dplyr::mutate(.x, significant = ifelse(FDR < 0.01,
+                                            "significant",
+                                            "not_significant")) %>% 
+      dplyr::group_by(significant) %>% 
+      dplyr::mutate(n_sites = n()) %>% 
+      ungroup() %>% 
+      dplyr::mutate(significant = factor(significant,
+                                         levels = c("significant", "not_significant")),
+                    significant = ifelse(significant == "significant",
+                                          paste0("significant editing sites\nFDR < 0.01 n = ", n_sites),
+                                          paste0("not significant\nn = ", n_sites))) %>% 
+  dplyr::arrange(significant)) -> de_dat
+
+names(de_dat) <- region_order
+
+n_sig_down <- map(de_dat, ~.x %>% 
+                  dplyr::filter(FDR < 0.01,
+                                logFC < 0) %>% 
+                  dplyr::pull() %>% length)
+n_sig_up <- map(de_dat, ~.x %>% 
+                  dplyr::filter(FDR < 0.01,
+                                logFC > 0) %>% 
+                  dplyr::pull() %>% length)
+
+plts <- pmap(
+  list(
+    de_dat, 
+    names(de_dat),
+    n_sig_down,
+    n_sig_up),
+  function(x, y, down, up){
+    
+    y <- ifelse(y == "Forebrain",
+                "Cerebrum",
+                y)
+    
+    ggplot(x, aes(logCPM, logFC)) + 
+    geom_point(aes(color = significant),
+               alpha = 0.5,
+               size = 0.25) +
+    scale_color_brewer(palette = "Set1", 
+                       name = "",
+                       breaks = x$significant[nrow(x)]) +
+    labs(title = y, 
+         y = "Log2 Fold Change (Cold vs. Warm)") +
+    ylim(-17, 17) +
+    annotate("text",
+             x = 1.5, y = 14, label = paste0("increased frequency\nn = ", up)) +
+    annotate("text",
+             x = 1.5, y = -14, label = paste0("decreased frequency\nn = ", down)) +
+    theme(
+      axis.line.x = element_line(size = 1),
+      axis.line.y = element_line(size = 1),
+      legend.position = "none",
+      legend.text = element_text(size = 12)
+      )
+  }
+)
+
+
+plt <- plot_grid(plotlist = plts, 
+                 nrow = 1, 
+                 align = "hv")
+
+plt
+save_plot("edits/warm_v_cold_edits/ma_plots.jpeg", 
+          plt,
+          device = "jpeg",
+          dpi = 600,
+          base_width = 10)
+
+save_plot("edits/warm_v_cold_edits/ma_plots.pdf", 
+          plt,
+          base_width = 10)
+```
+
+
+
+
+```{r sig_sites_by_anova}
+
+pdata_file <- file.path(docs_dir, "BrainRegionRNAseqLibMetadata.txt")
+pdata <- readr::read_tsv(pdata_file)
+  
+pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+
+pdata <- mutate(pdata, 
+                abbrev_sample = str_split(sample, "_", simplify = T)[, 1])
+
+pdata <- mutate(pdata,
+                temp = ifelse(str_detect(State,
+                                         "IBA|SA|Ent|SpD"),
+                              "warm",
+                              "cold"))
+
+hyper_annots <- read_tsv(file.path("hyperedits", "diffedits", "A_G_filtered_sites_annotation_kmeans.txt.gz")) %>% 
+  dplyr::filter(FDR < 0.01) %>% 
+  dplyr::select(site, kmeans_cluster) %>% 
+  unique()
+gatk_annots <- read_tsv("edits/A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz") %>% 
+  dplyr::select(site, kmeans_cluster) %>% 
+  unique()
+
+list(hyper_annots,
+     gatk_annots) -> annots
+
+names(annots) <- c("hyper", "gatk")
+annots <- bind_rows(annots, .id = "type")
+
+de_dat_annot <- map(de_dat, 
+                    ~left_join(.x, annots, by = "site"))
+de_dat_annot <- bind_rows(de_dat_annot, .id = "region")
+
+de_dat_annot %>% 
+  dplyr::filter(!is.na(kmeans_cluster)) %>% 
+  dplyr::select(site, logFC, FDR, type, kmeans_cluster) %>% 
+  group_by(site) %>% 
+  dplyr::arrange(type, .by_group = T) %>% # gatk > hyper
+  summarize(logFC = max(logFC), 
+            FDR = min(FDR), 
+            type = dplyr::first(type), 
+            kmeans_cluster = dplyr::first(kmeans_cluster)) -> grouped_dat
+
+grouped_dat <- mutate(grouped_dat, significant = ifelse(FDR < 0.01,
+                                         ifelse(logFC > 0,
+                                                "significantly increased",
+                                                "significantly decreased"),
+                                         "not significant"),
+                            annot_type = ifelse(type == "gatk",
+                                                paste0("GATK Group ", kmeans_cluster),
+                                                paste0("Hyperedited Group ", kmeans_cluster))) 
+
+grouped_dat %>% 
+  group_by(annot_type) %>% 
+  mutate(grp_total = n()) %>% 
+  group_by(annot_type, significant) %>% 
+  summarize(prop = n(), 
+            prop = prop / unique(grp_total)) -> grouped_dat_summary
+
+plt <- ggplot(grouped_dat_summary, aes(annot_type, prop)) +
+  geom_bar(aes(fill = significant), stat = "identity") +
+  scale_y_continuous(labels = percent) +
+  scale_fill_brewer(palette = "Greys",
+                    name = "") +
+  ylab("Percent of sites significant\nin cold vs. warm states") +
+  guides(fill = guide_legend(nrow = 3)) +
+  xlab("")  +
+  theme(
+    axis.text.x = element_text(angle = 90,
+                               hjust = 1,
+                               vjust = 0.5),
+    legend.position = "top"
+  )
+
+
+plt
+save_plot("edits/warm_v_cold_edits/prop_sig.pdf", plt, base_width = 3, base_height = 4.5)
+```
+
+## How many sites with decreased editing the cold?
+
+```{r}
+
+de_dat_annot <- map(de_dat, 
+                    ~left_join(.x, annots, by = "site"))
+de_dat_annot <- bind_rows(de_dat_annot, .id = "region")
+
+grouped_dat <- de_dat_annot %>% 
+  dplyr::select(region, site, logFC, FDR, type, kmeans_cluster) %>% 
+  mutate(significant = ifelse(FDR < 0.01,
+                                         ifelse(logFC > 0,
+                                                "significantly increased",
+                                                "significantly decreased"),
+                                         "not significant"),
+                            annot_type = ifelse(type == "gatk",
+                                                paste0("GATK Group ", kmeans_cluster),
+                                                paste0("Hyperedited Group ", kmeans_cluster))) 
+
+
+sig_decreased <- grouped_dat %>% 
+  filter(significant == "significantly decreased")
+
+length(unique(sig_decreased$site))
+
+
+gatk_annots <- read_tsv(file.path("edits",
+                          "variant_allele_counts_by_strand",
+                          "A_G_alleles",
+                          "A_G_filtered_sites_annotation.txt.gz")) %>% 
+  dplyr::select(site, chrom:end, strand, EFF:ANNOTATED) %>% 
+  unique()
+
+hyper_annots <- read_tsv(file.path("hyperedits",
+                          "diffedits",
+                          "A_G_filtered_sites_annotation.txt.gz")) %>% 
+  dplyr::select(site, chrom:end, strand, EFF:ANNOTATED) %>% 
+  unique()
+
+all_annots <- bind_rows(gatk_annots,
+                        hyper_annots) %>% 
+  unique()
+
+sig_decreased_annot <- left_join(sig_decreased, 
+                                 all_annots,
+                                 by = "site")
+```
+
+
+
+```{r, eval = F}
+
+
+count_data <- mutate(count_data,
+    site_type = ifelse(str_detect(cluster, "1"),
+                          paste0("Hyperedited Group ",
+                                 cluster, 
+                                 "\n(", 
+                                 formatC(n1, big.mark = ","), ")"),
+                       ifelse(str_detect(cluster, "2"),
+                          paste0("Hyperedited Group ",
+                                 cluster, 
+                                 "\n(", 
+                                 formatC(n2, big.mark = ","), ")"),
+                          paste0("Hyperedited Group ",
+                                 cluster, 
+                                 "\n(", 
+                                 formatC(n3, big.mark = ","), ")")
+                          )))
+
+#count_data <- mutate(count_data,
+#                     site_type = paste0("Hyperedited\n(", 
+#                                        length(unique(edit_site)), 
+#                                        ")"))
+
+# now add in the data from the GATK + edgeR approach
+raw_dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand",
+                              "A_G_alleles/A_G_all_sites_raw_counts.txt.gz"))
+
+raw_dat <- semi_join(raw_dat, 
+                     data_frame(edit_site = gatk_sites$site),
+                     by = "edit_site")
+
+gatk_count_data <- raw_dat %>% 
+  dplyr::select(-c(`#chrom`:ref)) %>% 
+  gather(key = "library", value = "counts", -edit_site, -base)
+
+gatk_count_data <- gatk_count_data %>% 
+  left_join(gatk_sites, by = c("edit_site" = "site")) %>% 
+  dplyr::select(edit_site:counts, kmeans_cluster) %>% 
+  dplyr::rename(cluster = kmeans_cluster) %>% 
+  unique()
+
+gatk_count_data <- gatk_count_data %>% 
+  left_join(pdata, by = c("library" = "g_names"))
+
+# set gatk_count_data
+gatk_count_data <- mutate(gatk_count_data,
+                     State = factor(State, levels = state_order))
+
+gatk_count_data <- gatk_count_data %>% 
+  spread(base, counts)
+
+n1 <- dplyr::filter(gatk_count_data, 
+                    cluster == 1) %>%
+  dplyr::pull(edit_site) %>% 
+  unique() %>% length(.)
+
+n2 <- dplyr::filter(gatk_count_data, 
+                    cluster == 2) %>%
+  dplyr::pull(edit_site) %>% 
+  unique() %>% length(.)
+
+gatk_count_data <- mutate(gatk_count_data,
+    site_type = ifelse(str_detect(cluster, "1"),
+                          paste0("GATK Group ",
+                                 cluster, 
+                                 "\n(", 
+                                 formatC(n1, big.mark = ","), ")"),
+                          paste0("GATK Group ",
+                                 cluster, 
+                                 "\n(", 
+                                 formatC(n2, big.mark = ","), ")")
+                          ))
+
+combined_dat <- bind_rows(count_data, gatk_count_data)
+
+index_data <- group_by(combined_dat, State, 
+                       cluster, region,
+                       site_type) %>% 
+  summarize(editing_index = sum(G) / (sum(A) + sum(G))) %>% 
+  ungroup()
+
+
+ggplot(index_data, aes(State, editing_index)) +
+  geom_point(aes(color = region), show.legend = T) +
+  geom_smooth(method = "loess", aes(group = as.factor(site_type)), 
+              show.legend = F, 
+              color = "black") +
+  facet_wrap(~site_type, nrow = 1) + 
+  scale_colour_manual(values = region_cols) +
+  ylab("Editing Index") +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 20),
+        axis.text.y = element_text(size = 20),
+        axis.text.x = element_text(size = 12, 
+                                   colour = state_cols),
+        legend.position = "top",
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16))
+
+ggsave("hyperedits/editing_index_across_states_by_cluster_kmeans.pdf", 
+       width = 9.5, height = 5.5)
+
+# split out gatk from hyperedits
+gatk <- dplyr::filter(index_data, 
+                      str_detect(site_type, "GATK"))
+hyper <- dplyr::filter(index_data, 
+                      str_detect(site_type, "Hyper"))
+
+ggplot(gatk, aes(State, editing_index)) +
+  geom_point(aes(color = region), show.legend = T) +
+  geom_smooth(method = "loess", aes(group = as.factor(site_type)), 
+              show.legend = F, 
+              color = "black") +
+  facet_wrap(~site_type) + 
+  scale_colour_manual(values = region_cols) +
+  ylab("Editing Index") +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.text.x = element_text(size = 16, colour = state_cols),
+        legend.position = "top",
+        legend.title = element_blank(),
+        legend.text = element_text(size = 16))
+
+```
+
+
+
+```{r, eval = F}
+cpms <- map(region_order,
+      ~read_tsv(file.path("edits",
+                           "warm_v_cold_edits",
+                           paste0(.x,
+                           "_normalized_cpms.txt.gz"))))
+
+
+tidy_cpms <- map(cpms,
+                 ~gather(.x, library, 
+                         cpms, -site))
+
+pdata_file <- file.path(docs_dir, "BrainRegionRNAseqLibMetadata.txt")
+pdata <- readr::read_tsv(pdata_file)
+  
+pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+
+pdata <- mutate(pdata, 
+                abbrev_sample = str_split(sample, "_", simplify = T)[, 1])
+
+pdata <- mutate(pdata,
+                temp = ifelse(str_detect(State,
+                                         "IBA|SA|Ent|SpD"),
+                              "warm",
+                              "cold"))
+tidy_cpms <- map(tidy_cpms,
+                 ~dplyr::mutate(.x, 
+                                abbrev_sample = str_replace(library, "^[0-9]+-", ""),
+                                abbrev_sample = str_split(abbrev_sample, "_", 
+                                                          simplify = T)[, 1])) 
+
+tidy_cpms <- map(tidy_cpms,
+                 ~left_join(.x, pdata, by = "abbrev_sample"))
+
+tidy_cpms <- map(tidy_cpms, 
+                 ~.x %>% 
+  separate(library, c("fq", "allele"), 
+           sep = ".txt.gz_")) 
+
+tidy_cpms <- map(tidy_cpms,
+                 ~.x %>% spread(allele, cpms, sep = "_"))
+
+tidy_ef <- map(tidy_cpms,
+               ~.x %>% 
+                 mutate(editing_freq = allele_a / (allele_a + allele-b)))
+tidy_grouped <- map(tidy_cpms,
+                    ~.x %>% 
+                      group_by(temp))
+```
+
+
+
+```{r read_objs}
+
+## gatk sites
+de_dat_gatk <- read_tsv(file.path(results_dir, 
+                             "2017-06-18",
+                             "variant_allele_counts_by_strand", "A_G_alleles", 
+                             "A_Gwarm_v_cold_post_hoc_edger.txt"))
+
+de_dat <- split(de_dat_gatk, de_dat_gatk$region)
+
+map(de_dat,
+    ~dplyr::mutate(.x, significant = ifelse(FDR < 0.01,
+                                            "significant",
+                                            "not_significant"),
+                   logFC = -logFC) %>% 
+      dplyr::group_by(significant) %>% 
+      dplyr::mutate(n_sites = n()) %>% 
+      ungroup() %>% 
+      dplyr::mutate(significant = factor(significant,
+                                         levels = c("significant", "not_significant")),
+                    significant = ifelse(significant == "significant",
+                                          paste0("significant editing sites\nFDR < 0.01 n = ", n_sites),
+                                          paste0("not significant\nn = ", n_sites))) %>% 
+  dplyr::arrange(significant)) -> de_dat
+
+names(de_dat) <- region_order
+
+n_sig_down <- map(de_dat, ~.x %>% 
+                  dplyr::filter(FDR < 0.01,
+                                logFC < 0) %>% 
+                  dplyr::pull() %>% length)
+n_sig_up <- map(de_dat, ~.x %>% 
+                  dplyr::filter(FDR < 0.01,
+                                logFC > 0) %>% 
+                  dplyr::pull() %>% length)
+
+plts <- pmap(
+  list(
+    de_dat, 
+    names(de_dat),
+    n_sig_down,
+    n_sig_up),
+  function(x, y, down, up){
+    
+    y <- ifelse(y == "Forebrain",
+                "Cerebrum",
+                y)
+    
+    ggplot(x, aes(logCPM, logFC)) + 
+    geom_point(aes(color = significant),
+               alpha = 0.5,
+               size = 0.25) +
+    scale_color_brewer(palette = "Set1", 
+                       name = "",
+                       breaks = x$significant[nrow(x)]) +
+    labs(title = y, 
+         y = "Log2 Fold Change (Cold vs. Warm)") +
+    ylim(-17, 17) +
+    annotate("text",
+             x = 1.5, y = 14, label = paste0("increased frequency\nn = ", up)) +
+    annotate("text",
+             x = 1.5, y = -14, label = paste0("decreased frequency\nn = ", down)) +
+    theme(
+      axis.line.x = element_line(size = 1),
+      axis.line.y = element_line(size = 1),
+      legend.position = "none",
+      legend.text = element_text(size = 12)
+      )
+  }
+)
+
+
+plt <- plot_grid(plotlist = plts, 
+                 nrow = 1, 
+                 align = "hv")
+
+plt
+save_plot("edits/warm_v_cold_edits/ma_plots_edits.jpeg", 
+          plt,
+          device = "jpeg",
+          dpi = 600,
+          base_width = 10)
+
+
+annot_dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand", "A_G_alleles",
+                        "A_G_filtered_sites_annotation.txt.gz"))
+
+annot_dat <- dplyr::select(annot_dat, 
+                           site, 
+                           chrom:ANNOTATED) %>% 
+  unique()
+#invert logFC due to way constrasts were set up
+de_dat_gatk %>% 
+  mutate(logFC = -logFC) %>% 
+  filter(FDR < 0.01, logFC < 0) %>% 
+  unique() %>% 
+  left_join(., annot_dat, by = "site") -> annots
+  
+table(annots$EFF)
+
+gatk_annots <- annots
+  
+```
+
+```{r}
+## hypersites
+
+de_dat_hyper <- read_tsv(file.path("hyperedits", "diffedits",
+                        "warm_v_cold_post_hoc_edger.txt"))
+
+
+de_dat <- split(de_dat_hyper, de_dat_hyper$region)
+
+map(de_dat,
+    ~dplyr::mutate(.x, significant = ifelse(FDR < 0.01,
+                                            "significant",
+                                            "not_significant"),
+                   logFC = -logFC) %>% 
+      dplyr::group_by(significant) %>% 
+      dplyr::mutate(n_sites = n()) %>% 
+      ungroup() %>% 
+      dplyr::mutate(significant = factor(significant,
+                                         levels = c("significant", "not_significant")),
+                    significant = ifelse(significant == "significant",
+                                          paste0("significant editing sites\nFDR < 0.01 n = ", n_sites),
+                                          paste0("not significant\nn = ", n_sites))) %>% 
+  dplyr::arrange(significant)) -> de_dat
+
+names(de_dat) <- region_order
+
+n_sig_down <- map(de_dat, ~.x %>% 
+                  dplyr::filter(FDR < 0.01,
+                                logFC < 0) %>% 
+                  dplyr::pull() %>% length)
+n_sig_up <- map(de_dat, ~.x %>% 
+                  dplyr::filter(FDR < 0.01,
+                                logFC > 0) %>% 
+                  dplyr::pull() %>% length)
+
+plts <- pmap(
+  list(
+    de_dat, 
+    names(de_dat),
+    n_sig_down,
+    n_sig_up),
+  function(x, y, down, up){
+    
+    y <- ifelse(y == "Forebrain",
+                "Cerebrum",
+                y)
+    
+    ggplot(x, aes(logCPM, logFC)) + 
+    geom_point(aes(color = significant),
+               alpha = 0.5,
+               size = 0.25) +
+    scale_color_brewer(palette = "Set1", 
+                       name = "",
+                       breaks = x$significant[nrow(x)]) +
+    labs(title = y, 
+         y = "Log2 Fold Change (Cold vs. Warm)") +
+    ylim(-17, 17) +
+    annotate("text",
+             x = 1.5, y = 14, label = paste0("increased frequency\nn = ", up)) +
+    annotate("text",
+             x = 1.5, y = -14, label = paste0("decreased frequency\nn = ", down)) +
+    theme(
+      axis.line.x = element_line(size = 1),
+      axis.line.y = element_line(size = 1),
+      legend.position = "none",
+      legend.text = element_text(size = 12)
+      )
+  }
+)
+
+
+plt <- plot_grid(plotlist = plts, 
+                 nrow = 1, 
+                 align = "hv")
+
+plt
+save_plot("hyperedits/diffedits/ma_plots_warmcold_edits.jpeg", 
+          plt,
+          device = "jpeg",
+          dpi = 600,
+          base_width = 10)
+
+
+annot_dat <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation.txt.gz")
+annot_dat <- dplyr::select(annot_dat, 
+                           site, 
+                           chrom:ANNOTATED) %>% 
+  unique()
+#invert logFC due to way constrasts were set up
+de_dat_hyper %>% 
+  mutate(logFC = -logFC) %>% 
+  filter(FDR < 0.01, logFC < 0) %>% 
+  unique() %>% 
+  left_join(., annot_dat, by = "site") -> annots
+  
+table(annots$EFF)
+
+hyper_annots <- annots
+
+out <- list(gatk_sites = gatk_annots,
+     hyper_sites = hyper_annots)
+
+
+```
+```{r write_out_table}
+#simplify SNPeff annotations
+map(out,
+    ~.x %>% 
+  dplyr::select(region:Disruption,
+                Nucleotide:AminoAcid,
+                GENE_ID:GENE_NAME) %>%
+  mutate(EFF = str_replace(EFF, "(custom|,custom)", "") %>% 
+           str_split(., ",") %>% 
+           map(., unique) %>%
+           map_chr(., ~paste0(.x, collapse = ",")),
+         Disruption = str_split(Disruption, ",") %>% 
+           map(., unique) %>%
+           map_chr(., ~paste0(.x, collapse = ",")),
+         AminoAcid = str_split(AminoAcid, ",") %>% 
+           map(., unique) %>%
+           map_chr(., ~paste0(.x, collapse = ",")),
+         Nucleotide = str_split(Nucleotide, ",") %>% 
+           map(., unique) %>%
+           map_chr(., ~paste0(.x, collapse = ",")),
+         region = ifelse(region  == "medulla",
+                         "Medulla",
+                         ifelse(region == "hypothalamus",
+                                "Hypothalamus",
+                                "Cerebrum")))) -> out_dat
+
+cnames <- colnames(out_dat$gatk_sites)
+descript <- c(
+  "brain region",
+  "site id (contig::position(1-based)::ref_nucleotide)",
+  "LogFC of alternate allele in Ar + LT over Spd + SA + IBA",
+  "logCPM (average across all states (excluding Ent))",
+  "LR (test statistic)",
+  "PValue from edgeR LRT test",
+  "FDR (Benjamini-Hochberg)",
+  "contig",
+  "start 0-based",
+  "end 0-based",
+  "REF nucleotide",
+  "ALT nucleotide",
+  "strand",
+  "EFF predicted effect from snpEFF",
+  "predicted distruption from snpEFF",
+  "Nucleotide change predicted by snpEFF",
+  "AminoAcid change predicted by snpEFF",
+  "Gene id from transcriptome build",
+  "biotype from Ensembl annotations",
+  "Ensembl transcript Id",
+  "Gene Name")
+
+out_descript <- data_frame(Columns = cnames,
+                                        Description = descript)
+
+map(out_dat, ~set_xlsx_class(.x,
+               c("GENE_ID", "TRANSCRIPT_ID", "GENE_NAME"),
+               "Text")) -> out_dat
+
+map(out_dat, ~set_xlsx_class(.x, 
+               c("start", "end", "GENE_NAME"),
+               "Number")) -> out_dat
+
+map(out_dat, ~set_xlsx_class(.x, 
+               c(str_subset(colnames(out_dat$gatk_sites), "log"),
+                 "LR", "PValue", "FDR"),
+               "Scientific")) -> out_dat
+
+out_dat <- list(out_descript,
+                out_dat$gatk_sites,
+                out_dat$hyper_sites)
+names(out_dat) <- c("Description", "GATK Sites Decreased Editing", "Hyperedited Sites Decreased Editing")
+openxlsx::write.xlsx(out_dat, "Supplemental-Table-X.xlsx")
+```
+
+
+
+
+
+

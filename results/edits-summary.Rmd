@@ -1,0 +1,1893 @@
+---
+title: "Variant Summaries"
+author: "Kent Riemondy RBI"
+date: "August 25, 2017"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+```{r setup_globals, message=FALSE, warning=FALSE, cache = F}
+source("globals.R")
+alleles  <- list(
+              "A_C_alleles",
+              "A_G_alleles",
+              "A_T_alleles",
+              "C_A_alleles",
+              "C_G_alleles",
+              "C_T_alleles",
+              "G_A_alleles",
+              "G_C_alleles",
+              "G_T_alleles",
+              "T_A_alleles",
+              "T_C_alleles",
+              "T_G_alleles")
+```
+
+
+### Distribution of editing sites
+  Variants were called individually for all samples, then merged and filtered to produce a common set. This filtered set represents variants that are located in annotated transcripts. 
+  
+```{r plot_variant_dist}
+
+all_variants <- read_tsv(file.path(data_dir, 
+                                   "vcf", 
+                                   "variant_allele_counts_by_strand", 
+                                   "annotated_variants.bed.gz")
+, 
+                         col_names = F, col_types = c("-----c-------------"))
+
+colnames(all_variants) <- "sites"
+
+read_sites <- function(allele_name, ref, alt, type = "all" ) {
+  dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand", allele_name,
+                        paste0(ref, "_", alt, "_", type , "_sites_raw_counts.txt.gz")), 
+                  col_types =  paste0(c("ccicc", rep("i", 90)), collapse = ""))
+}
+
+ref_alt <- str_split(alleles, "_")
+
+all_annot_sites <- map2(alleles, ref_alt, 
+                        ~read_sites(.x, .y[1], .y[2]))
+
+names(all_annot_sites) <- alleles
+
+all_annot_site_names <- map(all_annot_sites, 
+                            ~dplyr::select(.x, edit_site) %>%  
+                              unique())
+all_annot_site_names <- bind_rows(all_annot_site_names, .id = "allele") %>% 
+  group_by(edit_site) %>% 
+  summarize(alleles = first(allele))
+
+# filtered sites (Variant allele frequency > 5% < 95% )
+all_filtered_sites <- map2(alleles, ref_alt, 
+                           ~read_sites(.x, 
+                                       .y[1], 
+                                       .y[2], 
+                                       type = "filtered"))
+names(all_filtered_sites) <- alleles
+
+# unfiltered sites
+all_raw_sites <- map2(alleles, ref_alt, 
+                           ~read_sites(.x, 
+                                       .y[1], 
+                                       .y[2], 
+                                       type = "all"))
+names(all_raw_sites) <- alleles
+
+all_filtered_site_names <- map(all_filtered_sites, 
+                               ~dplyr::select(.x, edit_site) %>%  unique())
+all_filtered_site_names <- bind_rows(all_filtered_site_names, 
+                                     .id = "allele") %>%  
+  group_by(edit_site) %>% 
+  summarize(alleles = first(allele))
+
+read_annotations <- function(allele_name) {
+  dat <- read_tsv(file.path(data_dir, "vcf", 
+                            "variant_allele_counts_by_strand", 
+                            allele_name, "filtered_select_variants.bed.gz"),
+                  col_names = F)
+}
+all_annotations <- map(alleles, read_annotations)
+names(all_annotations) <- alleles
+# find unannotated sites
+unannotated <- map(all_annotations, 
+                   ~filter(.x, X8 == "intergenic_region,custom" | 
+                                              X8 == "custom", !str_detect(X14, "GENE_ID=")) %>% 
+                     dplyr::select(X6) %>% unique() %>% dplyr::rename(site = X6))
+
+unannotated <- bind_rows(unannotated, .id = "allele") %>%  
+  group_by(site) %>% 
+  summarize(alleles = first(allele))
+
+
+
+all_variants_annotation <- mutate(all_variants, 
+                       stranded = ifelse(sites %in% all_annot_site_names$edit_site,
+                                          "Stranded",
+                                          "Ambiguous"),
+                       filtered = ifelse(sites %in% all_filtered_site_names$edit_site,
+                                          "Passed Filters",
+                                          "Did Not Pass"),
+                       annotated = ifelse(sites %in% unannotated$site,
+                                          "Unannotated",
+                                          "Annotated"),
+                       annotation = "annotation")
+```
+
+```{r plot_variant_filters}
+a <- ggplot(all_variants_annotation, aes(annotation)) +
+  geom_bar(aes(fill = stranded)) +
+  xlab("") +
+  ylab("variants called (n)") +
+  scale_fill_manual(values = c("#D9D9D9", "#525252")) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    legend.title = element_blank()
+  )
+a
+
+save_plot("edits/all_variant_sites_assigned_to_strand.pdf", a, base_width = 4, base_height = 6)
+
+all_variants_annotation %>% filter(stranded != "Ambiguous") -> stranded_variants_annotation
+
+b <- ggplot(stranded_variants_annotation, aes(annotation)) +
+  geom_bar(aes(fill = filtered)) +
+  xlab("") +
+  ylab("variants called (n)") +
+  scale_fill_manual(values = c("#D9D9D9", "#525252")) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    legend.title = element_blank()
+  )
+b
+
+save_plot("edits/all_variant_sites_pass_filters.pdf", b, base_width = 4, base_height = 6)
+
+stranded_variants_annotation %>% filter(filtered != "Did Not Pass") -> filtered_variants_annotation
+
+d <- ggplot(filtered_variants_annotation, aes(annotation)) +
+  geom_bar(aes(fill = annotated)) +
+  ylab("variants called (n)") +
+  xlab("") +
+  scale_fill_manual(values = c("#D9D9D9", "#525252")) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    legend.title = element_blank()
+  )
+d
+
+save_plot("edits/all_variant_sites_pass_filtered_annotated.pdf", d, base_width = 4, base_height = 6)
+grp_plots <- plot_grid(a, b, d, align = "h", nrow = 1)
+save_plot("edits/all_variant_filters_plots.pdf", grp_plots, base_width = 10, base_height = 6)
+
+d <- ggplot(all_variants_annotation, aes(annotation)) +
+  geom_bar(aes(fill = annotated)) +
+  ylab("variants called (n)") +
+  scale_fill_manual(values = c("#D9D9D9", "#525252")) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    legend.title = element_blank()
+  )
+d
+
+save_plot("edits/all_variant_sites_annotated.pdf", d, base_width = 4, base_height = 6)
+
+all_annot_sites_summary <-  map(all_filtered_sites, 
+                                ~dplyr::select(.x, edit_site) %>%  
+                                 unique() %>% 
+                                  summarize(total_sites = n()))
+
+all_annot_sites_summary <- bind_rows(all_annot_sites_summary, 
+                                     .id = "allele")
+
+all_annot_sites_summary <- mutate(all_annot_sites_summary, 
+                       allele_label = str_replace(allele, 
+                                                  "_alleles", 
+                                                  "") %>% 
+                         str_replace("_", "->")) 
+
+
+p <- ggplot(all_annot_sites_summary, aes(allele_label, total_sites)) +
+  geom_bar(stat = "identity") +
+  ylab("Count of \nSingle Nucleotide Variants") +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(angle = 90),
+    legend.title = element_blank(),
+    legend.pos = "none"
+  )
+p
+
+save_plot("edits/all_filtered_variant_sites.pdf", p)
+
+all_annot_sites_summary %>% 
+  dplyr::mutate(all_total = sum(total_sites),
+                percent_allele = 100 * (total_sites / all_total)) %>% 
+  dplyr::select(-all_total)
+
+#compute enrichment over rev complement
+enrichment_over_rc <- function(df, allele, site_count){
+  allele_split <- str_split(allele, "_", simplify = T)
+  ref <- allele_split[1]
+  alt <- allele_split[2]
+  rc <- paste0(rev_comp(ref), "_", 
+               rev_comp(alt), "_alleles")
+  dplyr::filter(df, 
+                allele == rc) %>% 
+    dplyr::pull(total_sites) -> rc_total_sites
+  
+  site_count / rc_total_sites 
+}
+all_annot_sites_summary %>% 
+  rowwise() %>% 
+  mutate(enrichment = enrichment_over_rc(all_annot_sites_summary,
+                                         allele,
+                                         total_sites)) -> enrichment_summary
+
+p <- ggplot(enrichment_summary, aes(allele_label, enrichment)) +
+  geom_bar(stat = "identity") +
+  ylab("Enrichment over\ncomplement allele") +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(angle = 90),
+    legend.title = element_blank(),
+    legend.pos = "none"
+  )
+p
+
+save_plot("edits/all_filtered_variant_sites_enrichment.pdf", p)
+
+
+
+#fig2 supplement
+dir.create(file.path(figs_dir[2], "supplement"), recursive = T)
+file.copy("edits/all_filtered_variant_sites.pdf", 
+          file.path(figs_dir[2], "supplement"), overwrite = T)
+
+
+all_raw_sites_summary <-  map(all_raw_sites, 
+                                ~dplyr::select(.x, edit_site) %>%  
+                                 unique() %>% 
+                                  summarize(total_sites = n()))
+
+all_raw_sites_summary <- bind_rows(all_raw_sites_summary, 
+                                     .id = "allele")
+
+all_raw_sites_summary <- mutate(all_raw_sites_summary, 
+                       allele_label = str_replace(allele, 
+                                                  "_alleles", 
+                                                  "") %>% 
+                         str_replace("_", "->")) 
+
+
+p <- ggplot(all_raw_sites_summary, aes(allele_label, total_sites)) +
+  geom_bar(stat = "identity") +
+  ylab("Unfiltered Variants (n)") +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(angle = 90),
+    legend.title = element_blank(),
+    legend.pos = "none"
+  )
+p
+
+save_plot("edits/all_raw_variant_sites.pdf", p)
+
+#fig2 supplement
+file.copy("edits/all_raw_variant_sites.pdf", 
+          file.path(figs_dir[2], "supplement"), overwrite = T)
+```
+
+
+
+### SNV profile
+  After performing variant calling with the ``GATK`` pipeline, I extracted out each set of called variants per sample. The variants were filtered to exclude sites present with less than 10 reads per sample, resulting in an average of `118,156.7` variants per sample. 
+
+```{r parse_vcfs_unfiltered}
+
+vcfs <- list.files(file.path(data_dir, "vcf", "recalibrated", "filtered", "dp10"), 
+                   pattern = "snps.vcf.gz$",
+                   recursive = T,
+                   full.names = T)
+
+vcf_dfs <- purrr::map(vcfs, ~read_tsv(.x, comment = "##"))
+names_vcf <- basename(vcfs) 
+names_vcf <- stringr::str_split(names_vcf, "_") %>% 
+  map_chr(., ~.x[1])
+names_vcf <- stringr::str_replace(names_vcf, "^[0-9]+-", "")
+
+names(vcf_dfs) <- names_vcf
+
+
+vcf_dfs <- map(vcf_dfs, ~dplyr::select(.x, `#CHROM`:ALT))
+vcf_dfs <- map(vcf_dfs, ~mutate(.x, 
+                                site = paste(`#CHROM`, POS, 
+                                             REF, sep = "::")))
+vcf_dfs <- map(vcf_dfs, ~dplyr::select(.x, site))
+
+vcf_df <- dplyr::bind_rows(vcf_dfs, .id = "Sample")
+
+vcf_df <- inner_join(vcf_df, all_annot_site_names, 
+                     by = c("site" = "edit_site"))
+
+vcf_df <- separate(vcf_df, Sample, 
+                   c("brain_region", "animal_number"), 
+                   sep = 1, convert = TRUE)
+
+```
+
+```{r annotate_unfiltered_samples}
+#tidy phenodata
+pdata <- readr::read_tsv(file.path(docs_dir, "BrainRegionRNAseqLibMetadata.txt"))
+
+vcf_df <- inner_join(vcf_df, pdata, by = c("animal_number" = "Animal")) %>%
+    dplyr::select(-(`Lane (F)`:Medulla), -(Sex:sacTb))
+
+vcf_df <- mutate(vcf_df, 
+                 brain_region = ifelse(brain_region == "M", "Medulla",
+                                       ifelse(brain_region == "B", "Cerebrum",
+                                              "Hypothalamus")),
+                 alleles = str_replace(alleles, "_alleles", "") %>% 
+                   str_replace("_", "->"))
+
+# order the hibernation states by relative time(summer -> hibernation -> spring)
+vcf_df <-  mutate(vcf_df, State = factor(State,
+                                levels = state_order))
+
+vcf_df_summary <- group_by(vcf_df, brain_region, animal_number, alleles, State) %>% 
+  summarize(n_alleles = n())
+
+vcf_df_summary_region <- group_by(vcf_df_summary, 
+                                  brain_region, 
+                                  alleles) %>% 
+  summarize(mean_alleles = mean(n_alleles))
+
+vcf_df_summary_state <- group_by(vcf_df_summary, 
+                                 State, 
+                                 alleles) %>% 
+  summarize(mean_alleles = mean(n_alleles))
+
+vcf_df_summary_state_region <- group_by(vcf_df_summary, 
+                                        State, 
+                                        alleles, 
+                                        brain_region) %>% 
+  summarize(mean_alleles = mean(n_alleles))
+
+
+```
+
+```{r plot_nucleotide_comp_unfiltered}
+## handle too many colors
+#color_fxn <- colorRampPalette(brewer.pal(9, "Spectral"))
+
+site_count_theme <-  theme(
+    axis.title.y = element_blank(),
+    axis.title.x = element_text(size = 24),  
+    axis.text.y = element_text(size = 16),
+    strip.text = element_text(size = 18),
+    axis.text.x = element_text(size = 16),
+    legend.position = "none"
+  )
+
+p <- ggplot(vcf_df_summary_state, aes(alleles, mean_alleles / 1e3)) +
+  geom_bar(stat = "identity", aes(fill = State)) +
+  ylab("mean variants observed (Thousands)") +
+  facet_wrap(~State) +
+  scale_fill_manual(values = state_cols) +
+  coord_flip() +
+  site_count_theme
+save_plot("edits/variants_per_state.pdf", p, base_height = 8)
+#ggsave("variants_per_state.pdf")
+
+p <- ggplot(vcf_df_summary_region, aes(alleles, mean_alleles / 1e3)) +
+  geom_bar(stat = "identity", aes(fill = brain_region)) +
+  ylab("mean variants observed (Thousands)") +
+  facet_wrap(~brain_region) +
+  scale_fill_manual(values = region_cols) +
+    coord_flip() +
+  site_count_theme
+save_plot("edits/variants_per_region.pdf", p, base_height = 8)
+
+p <- ggplot(vcf_df_summary_state_region, aes(alleles, mean_alleles / 1e3)) +
+  geom_bar(stat = "identity", aes(fill = State)) +
+  ylab("mean variants observed (Thousands)") +
+  facet_grid(State~brain_region) +
+  scale_fill_manual(values = state_cols) +
+  coord_flip() +
+  site_count_theme +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.x = element_blank(),
+    legend.title = element_blank()
+  )
+save_plot("edits/variants_per_state_and_region.pdf", p, base_height = 16)
+```
+
+
+
+```{r parse_files}
+
+read_site_annotation <- function(allele_name, ref, alt ) {
+  dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand", allele_name,
+                        paste0(ref, "_", alt, "_filtered_sites_annotation.txt.gz")))
+}
+summarize_sig_sites <- function(df){
+   df %>% 
+     filter(FDR < 0.01) %>% 
+     group_by(Region) %>% 
+     dplyr::select(Region, site) %>% 
+     unique() %>% 
+     summarize(sig_sites = n())
+}
+ref_alt <- str_split(alleles, "_")
+
+site_annotation <- map2(alleles, ref_alt, 
+                        ~read_site_annotation(.x, .y[1], .y[2]))
+names(site_annotation) <- alleles
+
+```
+
+### shared edits per sample
+
+```{r shared_edits, cache.lazy=F}
+
+vcfs <- list.files(file.path(data_dir, "vcf/variant_allele_counts_by_strand/"), 
+                   pattern = "filtered_select_variants.vcf.gz$",
+                   recursive = T,
+                   full.names = T)
+
+vcfs <- str_subset(vcfs, "_alleles")
+
+vcf_dfs <- purrr::map(vcfs, ~read_tsv(.x, comment = "##"))
+names_vcf <- str_match(vcfs, "[ATCG]_[ATCG]_alleles") 
+
+names(vcf_dfs) <- names_vcf
+
+# make site annotation col and drop other cols
+vcf_dfs <- map(vcf_dfs, ~mutate(.x, site = paste(`#CHROM`, POS, REF, sep = "::")))
+vcf_dfs <- map(vcf_dfs, ~dplyr::select(.x, site, `1-M53_S1`:B84_7_AGTCAA))
+
+# if site is call convert to true otherwise false
+vcf_detected <- map(vcf_dfs,
+  ~mutate_at(.x, 
+          .vars = 2:91, 
+          .funs = funs(!str_detect(., fixed("./.:.:.:.:.")))))
+
+# summarize number of smaples with variant called
+vcf_detected_summary <- map(vcf_detected,
+  ~data_frame(n_samples = rowSums(.x[, c(2:91)],),
+              site = .x$site))
+
+# combine all data
+vcf_detected_summary <- bind_rows(vcf_detected_summary,
+                                  .id = "allele")
+
+ggplot(vcf_detected_summary, aes(n_samples)) +
+  geom_histogram() +
+  facet_wrap(~allele) + 
+  xlab("Number of samples site detected in, prior to\nfiltering extreme variant allele frequencies")
+
+```
+
+### Significant sites summaries across all alleles
+```{r}
+sig_sites <- map(site_annotation, ~summarize_sig_sites(.x))
+names(sig_sites) <- alleles
+
+sig_sites <- bind_rows(sig_sites, .id = "allele")
+sig_sites <- sig_sites %>% 
+  tidyr::complete(Region, 
+           allele, 
+           fill = list(sig_sites = 0))
+
+# proportion of total sig sites per allele
+proportions_sig <- sig_sites %>% 
+  group_by(Region) %>% 
+  mutate(total = sum(sig_sites, na.rm = T), 
+         prop = sig_sites / total)
+
+# proportion of sig sites to tested sites per allele
+bind_rows(site_annotation, .id = "allele") %>% 
+  group_by(allele, Region) %>% 
+  unique() %>% 
+  summarize(tested_sites = n()) -> all_sites
+
+proportions_sig %>% 
+  left_join(all_sites, by = c("Region", "allele")) %>% 
+  mutate(prop_of_tested = sig_sites / tested_sites)
+
+proportions_sig %>% 
+  group_by(Region) %>% 
+  summarize(total = sum(sig_sites, na.rm = T)) %>% 
+  dplyr::arrange(desc(total))
+```
+
+```{r plot_sig_numbers, fig.width = 12, fig.height = 8}
+proportions_sig <- mutate(proportions_sig, 
+                       allele_label = str_replace(allele, "_alleles", "") 
+                    %>% str_replace("_", "->")) 
+
+pretty_theme <- theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_text(size = 20),  
+    axis.text.y = element_text(size = 20),
+    axis.text.x = element_text(size = 20, angle = 90, 
+                               hjust = 1, vjust = 0.5),
+    legend.position =  c(0.3, 0.90),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 20)
+  )
+
+a <- ggplot(proportions_sig, aes(allele_label, sig_sites)) +
+  geom_bar(stat = "identity", aes(fill = Region), position = "dodge") +
+  ylab("Number of significant variants") +
+ # facet_wrap(~Region) +
+  scale_fill_manual(values = region_cols, guide = guide_legend(nrow = 3)) +
+  scale_y_continuous(breaks = pretty(proportions_sig$sig_sites, n = 7)) +
+  pretty_theme
+
+# save_plot("edits/all_sig_sites.pdf", p, base_height = 6)
+#figure 2a
+#file.copy("edits/all_sig_sites.pdf", figs_dir[2], overwrite = T)
+
+
+b <- ggplot(proportions_sig, aes(allele_label, prop)) +
+  geom_bar(stat = "identity", aes(fill = Region), position = "dodge") +
+  ylab("Proportion of significant variants") +
+ # facet_wrap(~Region) +
+  scale_fill_manual(values = region_cols, guide = guide_legend(nrow = 3)) +
+  scale_y_continuous(breaks = pretty(proportions_sig$prop, n = 5)) +
+  pretty_theme
+
+
+plt <- plot_grid(b, a, align = "hv")
+plt
+ save_plot("edits/all_sig_sites2.pdf", plt, base_width = 9, base_height = 5.5)
+#figure 2a
+file.copy("edits/all_sig_sites.pdf", figs_dir[2], overwrite = T)
+
+# instead just plot the proportions and annotate the number of sites
+proportions_sig <- proportions_sig %>% 
+  ungroup() %>% 
+  mutate(Region = ifelse(Region == "Forebrain",
+                         "Cerebrum",
+                         Region))
+
+nsites <- proportions_sig %>% 
+  group_by(Region) %>%
+  summarize(nsites = unique(total)) %>% 
+  mutate(outname = paste0(Region, " n = ", comma(nsites)))
+
+
+
+
+b <- ggplot(proportions_sig, aes(allele_label, prop)) +
+  geom_bar(stat = "identity", aes(fill = Region), position = "dodge") +
+  ylab("Proportion of significant variants") +
+ # facet_wrap(~Region) +
+  scale_fill_manual(values = region_cols, 
+                    guide = guide_legend(nrow = 3),
+                    breaks = nsites$Region,
+                    labels = nsites$outname) +
+  scale_y_continuous(breaks = pretty(proportions_sig$prop, n = 5)) +
+  pretty_theme + 
+  theme(legend.key.height=unit(1.5,"line"))
+
+b
+
+ save_plot("edits/all_sig_sites_annotated_proportions.pdf", 
+           b, 
+           base_width = 7, 
+           base_height = 5.5)
+```
+
+### genomic distribution
+```{r get_genomic_distribution_of_sites}
+annotation <- read_tsv(file.path("edits", "A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz"))
+annotated_sig <- annotation %>% 
+  dplyr::filter(FDR < 0.01,
+                kmeans_cluster == 1) %>% 
+  dplyr::select(site, EFF) %>% 
+  unique()
+
+annotation_hyper <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation_kmeans.txt.gz")
+annotated_sig_hyper <- annotation_hyper %>% 
+  dplyr::filter(FDR < 0.01,
+                kmeans_cluster != 3) %>% 
+  dplyr::select(site, EFF) %>% 
+  dplyr::mutate(EFF = str_split(EFF, ",") %>% 
+                  map(., valr::values_unique) %>% 
+                  str_replace(., ",custom", "") %>% 
+                  map_chr(., ~paste0(.x, collapse = ",")))
+
+#drop duplicated sites
+annotated_sig_hyper <- anti_join(annotated_sig_hyper,
+                                 annotated_sig,
+                                 by = "site") %>% 
+  unique()
+
+annotated_sig <- bind_rows(annotated_sig, 
+                           annotated_sig_hyper)
+
+annotated_sig <- mutate(annotated_sig, 
+                        EFF = ifelse(EFF == "custom",
+                               "intergenic_region", 
+                               EFF))
+annotated_sig %>% 
+  group_by(EFF) %>% 
+  summarize(total = n()) %>% 
+  arrange(desc(total)) -> snpeff_summary
+
+snpeff_summary %>% 
+  mutate(text = paste0("n = ", total)) -> snpeff_summary
+snpeff_summary
+
+snpeff_summary %>% 
+  mutate(EFF = ifelse(EFF == "splice_acceptor_variant&intron_variant",
+                      "splice_acceptor_variant",
+                      ifelse(EFF == "splice_region_variant&intron_variant",
+                             "splice_region_variant",
+                             EFF))) -> snpeff_summary
+
+snpeff_summary$EFF <- str_replace(snpeff_summary$EFF, 
+     "5_prime_UTR_premature_start_codon_gain_variant",
+     "5_prime_UTR_premature\nstart_codon_gain_variant")
+
+p <- ggplot(snpeff_summary, 
+       aes(reorder(EFF, total), total)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = total), nudge_y = 300) +
+  coord_flip() +
+  ylim(c(0, 4000)) +
+  ylab("Number of editing sites") +
+  theme(
+    axis.title.y = element_blank()
+  )
+
+p
+
+save_plot("hyperedits/predicted_effects.pdf", p,
+          base_width = 5, base_height = 3.5)
+
+annotated_sig_gatk <- annotation %>% 
+  dplyr::filter(FDR < 0.01,
+                kmeans_cluster == 1) 
+
+
+annotation_hyper <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation_kmeans.txt.gz")
+annotated_sig_hyper <- annotation_hyper %>% 
+  dplyr::filter(FDR < 0.01,
+                kmeans_cluster != 3) %>% 
+  dplyr::mutate(EFF = str_split(EFF, ",") %>% 
+                  map(., valr::values_unique) %>% 
+                  str_replace(., ",custom", "") %>% 
+                  map_chr(., ~paste0(.x, collapse = ",")))
+
+snp_eff_annotations <- bind_rows(annotated_sig_gatk, 
+          annotated_sig_hyper)
+snp_eff_annotations %>% 
+  dplyr::select(EFF, site, Disruption, GeneName) %>% 
+  unique() -> snp_eff_annotations_simple
+snp_eff_annotations_simple
+
+# write out to txt and xlsx
+
+snp_eff_annotations_simple %>% 
+  tidyr::separate(site, c("chrom", "start", "allele"), sep = "::") %>% 
+  mutate(end = as.integer(start),
+         start = end - 1L,
+         strand = ifelse(allele == "A",
+                         "+",
+                         "-")) %>% 
+  dplyr::select(-allele) -> out_snpEff
+
+out_snpEff %>% 
+  mutate(Disruption = str_split(Disruption, ",") %>% 
+           map(., unique) %>% 
+           map_chr(., ~paste0(.x, collapse = ",")),
+         GeneName = str_replace(GeneName, ",$", ""),
+         GeneName = str_split(GeneName, ",") %>% 
+           map(., unique) %>% 
+           map_chr(., ~paste0(.x, collapse = ","))
+         ) %>% 
+  dplyr::select(chrom, start, end, strand, everything()) -> out_snpEff
+
+write_tsv(out_snpEff, 
+          "hyperedits/snpeff_annotations.txt")
+
+set_xlsx_class(out_snpEff,
+               "GeneName", 
+               "text") -> out_snpEff
+
+openxlsx::write.xlsx(out_snpEff, "hyperedits/supplemental-table-2.xlsx")
+```
+
+
+```{r valr}
+sig_bed <- dplyr::select(snp_eff_annotations, chrom, start, end, site) %>% 
+  unique()
+bed <- read_tsv(file.path(db_dir, "ensembl85", "Ictidomys_tridecemlineatus.spetri2.85.bed.gz"),
+                col_names = F)
+colnames(bed) <- c("chrom", "start", "end", "name", "score", "strand", 
+                   "geneid", "biotype", "transcript", "genename",
+                   "exon_count", "feature")
+
+stringtietaco <- read_tsv("mrna/fixed_all95.bed.gz", col_names = F)
+colnames(stringtietaco) <-  c("chrom", "start", "end", "name", "score", "strand",
+                              "biotype", "denovo_gid", 
+                                       "denovo_tid", "geneid", 
+                                       "transcript", "genename", "feature")
+
+# convert transcriptids to novel ids from stringtie if not assinged 
+# same for gene ids
+# also drop novel ids and reorder to match ensembl
+stringtietaco <- mutate(stringtietaco, 
+                        geneid = ifelse(is.na(geneid),
+                                        denovo_gid,
+                                        geneid),
+                        transcript = ifelse(is.na(transcript),
+                                            denovo_tid,
+                                            transcript)) %>% 
+  dplyr::select(-denovo_gid, -denovo_tid) %>% 
+  dplyr::select(chrom:strand, geneid, biotype, transcript,
+                genename, feature)
+
+# add in exon count field
+n_exon <- dplyr::group_by(stringtietaco, transcript) %>% 
+  dplyr::filter(feature == "exon") %>% 
+  summarize(exon_count = n())
+
+stringtietaco <- left_join(stringtietaco, n_exon, by = "transcript") %>% 
+  dplyr::select(-feature, everything(), feature)
+
+bed <- bind_rows(bed, stringtietaco) %>% unique()
+
+# now add in 3' and 5' utr annotations (for novel exons in known transcripts with CDS annotations in ensembl)
+
+bed %>% 
+  group_by(transcript) %>% 
+  mutate(coding = any(feature == "CDS")) -> bed
+
+# determine min and max of CDS per transcript
+bed %>% 
+  dplyr::filter(str_detect(feature, "CDS|start_codon")) %>% 
+  group_by(transcript) %>% 
+  summarize(cds_start = min(start),
+         cds_end = max(end)) -> cds_bed
+
+bed <- left_join(bed, cds_bed, by = "transcript")
+
+classify_utrs <- function(start, end, strand, cds_min, cds_max){
+
+  if (strand == "+"){
+    if (end <= cds_min){
+      return("five_prime_utr")
+    } else if (start > cds_max) {
+      return("three_prime_utr")
+    } else {
+      return("overlapping_cds")
+    }
+  } else {
+     if (end <= cds_min){
+      return("three_prime_utr")
+    } else if (start > cds_max) {
+      return("five_prime_utr")
+    } else {
+      return("overlapping_cds")
+    }
+  }
+}
+
+# classify exons into 5' or 3' UTR
+bed %>% 
+  dplyr::filter(feature == "exon",
+                coding == TRUE) %>% 
+  dplyr::rowwise() %>% 
+  mutate(utr_classification = classify_utrs(start, end, strand, 
+                                            cds_start, cds_end)) -> tmp_bed
+
+bed <- left_join(bed, tmp_bed) %>%
+  unique()
+
+bed <- ungroup(bed)
+#
+tmp_bed <- bed_intersect(sig_bed, bed)
+not_bed <- bed_intersect(sig_bed, bed, 
+                         invert = T)
+
+features_bed_all <- bind_rows(tmp_bed, not_bed)
+
+#replace site.x col with site col after binding up non-intersecting sites
+features_bed <- mutate(features_bed_all, site.x = ifelse(!is.na(site),
+                                            site,
+                                            site.x))
+features_bed <- features_bed %>% 
+  group_by(site.x) %>% 
+  summarize(features = paste0(unique(feature.y), collapse = ","), 
+            genes = paste0(unique(geneid.y), collapse = ","),
+            utr = paste0(unique(utr_classification.y), collapse = ","),
+            coding = paste0(unique(coding.y), collapse = ","))
+
+features_bed <-  features_bed %>% 
+  mutate(features = paste0(features, ",", utr, sep =","), 
+         features = str_split(features, ",") %>% 
+           map(., unique) %>% 
+           map_chr(., ~paste0(.x, collapse = ","))) 
+
+best_bed <- mutate(features_bed, 
+                   best_features = ifelse(str_detect(features, 
+                                                     "CDS"), 
+                                          "CDS",
+                                     ifelse(str_detect(features,
+                                                       "three_prime_utr"),
+                                            "3'UTR",
+                                            ifelse(str_detect(features, 
+                                                              "five_prime_utr"), 
+                                                   "5'UTR", 
+                                                   ifelse(str_detect(features, 
+                                                                     "start_codon"),
+                                                          "CDS", 
+                                                          ifelse(str_detect(features, 
+                                                                            "stop_codon"), 
+                                                                 "CDS", 
+                                                                 ifelse(str_detect(features, 
+                                                                                   "exon"), 
+                                                                        "ncRNA\nor novel\nannotated\nexons",
+                                                                 ifelse(str_detect(features, 
+                                                                                   "gene|transcript"), 
+                                                                        "Intron",
+                                                                        "Intergenic")))))))) 
+                                                                                                               
+summary_bed <- best_bed %>% group_by(best_features) %>%  summarize(totals = n())
+
+p <- ggplot(summary_bed, aes(best_features, totals)) +
+  geom_bar(stat = "identity") +
+  ylab("Number of Significant Sites") +
+  theme(
+    axis.title.x = element_blank()
+  )
+p
+save_plot("edits/genomic_distribution.pdf", p, base_width = 5)
+
+bed <- read_tsv(file.path(db_dir, "ensembl85", "Ictidomys_tridecemlineatus.spetri2.85.bed.gz"),
+                col_names = F)
+
+colnames(bed) <- c("chrom", "start", "end", "name", "score", "strand", "geneid",
+  "biotype", "transcript", "genename", "exon_count", "feature")
+exon_bed <- filter(bed, feature == "exon")
+transcript_bed <- filter(bed, feature == "transcript")
+cds_bed <- filter(bed, feature == "CDS" | feature == "start_coding" | feature == "stop_codon")
+three_bed <- filter(bed, feature == "three_prime_utr")
+five_bed <- filter(bed, feature == "five_prime_utr")
+
+ncRNA <- anti_join(exon_bed, cds_bed, by = "transcript") %>%  
+  anti_join(., three_bed, by = "transcript") %>%  
+  anti_join(., five_bed, by = "transcript")
+
+transcript_bed <- group_by(transcript_bed, strand)
+exon_bed <- group_by(exon_bed, strand)
+introns <- bed_subtract(transcript_bed, exon_bed)
+regions <- list(introns, cds_bed, three_bed, five_bed, ncRNA)
+regions <- map(regions, ~mutate(.x, length = end - start))
+regions <- map(regions, ~ungroup(.x) %>% summarize(total = sum(length)))
+names(regions) <- c("intron", "CDS", "3'UTR", "5'UTR", "ncRNA")
+regions <- bind_rows(regions, .id = "region")
+
+p <- ggplot(regions, aes(region, total)) +
+  geom_bar(stat = "identity") +
+  ylab("Nucleotides found in each Annotation") +
+  theme(
+    axis.title.x = element_blank()
+  )
+p
+save_plot("edits/annotation_genomic_distribution.pdf", p, base_width = 5)
+
+```
+
+### Number of transcripts
+
+```{r ntranscripts}
+features_bed_all %>% 
+  group_by(geneid.y) %>% 
+  summarize(n = n())
+
+```
+### repeat distribution
+
+```{r}
+dl_file <- file.path(db_dir, "ensembl85", "ensembl85_rmsk.txt.gz")
+if(!file.exists(dl_file)){
+  url <- "http://hgdownload.soe.ucsc.edu/goldenPath/speTri2/database/rmsk.txt.gz"
+  download.file(url, dl_file)
+}
+
+bed_file <- file.path(db_dir, "ensembl85", "ensembl85_rmsk.bed.gz")
+
+if(!file.exists(bed_file)){
+  dat <- read_tsv(dl_file, col_names = F)
+  dat <- dplyr::select(dat, 
+                       X6, #chrom 
+                       X7, #start
+                       X8, #end
+                       X11, #repeat name (e.g. STRIDE)
+                       X12, # repeat class (e.g. SINE)
+                       X10 #strand
+                       ) %>% 
+    dplyr::rename(chrom = X6,
+                  start = X7,
+                  end = X8,
+                  name = X11,
+                  class = X12,
+                  strand = X10)
+  write_tsv(dat, bed_file)
+}
+```
+```{r analyze_repeats}
+bed <- read_tsv(file.path(db_dir, "ensembl85", "ensembl85_rmsk.bed.gz"))
+
+new_chroms <- str_replace(sig_bed$chrom, ".1$", "")
+sig_bed_ucsc <- sig_bed
+sig_bed_ucsc$chrom <- new_chroms
+rpt_bed <- bed_intersect(sig_bed_ucsc, bed)
+non_rpt_bed <- bed_intersect(sig_bed_ucsc, bed, invert = T)
+
+rpt_bed <- rpt_bed %>% 
+  dplyr::select(site.x, name.y, class.y) %>% 
+  mutate(repeat_found = "repeat")
+
+non_rpt_bed <- non_rpt_bed %>%  dplyr::select(site) %>% 
+  mutate(repeat_found = "non-repeat", name.y = "none", class.y = "none", site.x = site) %>%
+  dplyr::select(-site, site.x, name.y, class.y, repeat_found)
+
+rpt_bed <- bind_rows(rpt_bed, non_rpt_bed)
+
+rpt_bed <- rpt_bed %>% 
+  group_by(site.x) %>%  
+  summarize(repeat_names = valr::values_unique(name.y), 
+            repeat_classes = valr::values_unique(class.y),
+            repeat_present = first(repeat_found))
+
+#annotate with best_bed from above
+rpt_bed <- left_join(rpt_bed, best_bed)                                                                                              
+# add in a total factor
+tmp <- rpt_bed %>% mutate(best_features = "Total")
+rpt_bed <- bind_rows(rpt_bed, tmp)
+
+# add in totals for text
+rpt_txt <- rpt_bed %>% 
+  group_by(best_features) %>% 
+  summarize(total_n = paste0("n = ", 
+                             formatC(n(), big.mark = ",")))
+
+rpt_bed <- mutate(rpt_bed, 
+                  best_features = factor(best_features, 
+                                                  levels = c("Total",
+                                                             "Intron",
+                                                             "Intergenic",
+                                                             "CDS",
+                                                             "5'UTR",
+                                                             "3'UTR",
+                                                             "ncRNA\nor novel\nannotated\nexons")),
+                  repeat_present = factor(repeat_present,
+                                          levels = c("repeat", "non-repeat")))
+
+p <- ggplot(rpt_bed, aes(best_features)) +
+  geom_bar(aes(fill = repeat_present), 
+           position = "fill",
+           color="black") +
+  geom_text(data = rpt_txt, 
+            aes(best_features, 0.8, label = total_n),
+            angle = 90,
+            size = 5) +
+  ylab("Proportion of editing sites") +
+  scale_fill_manual(values = c("#D9D9D9", "#525252")) +
+  theme(
+    axis.title.x = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "top"
+  )
+p
+
+save_plot("edits/repeat_distribution.pdf", p, base_width = 6)
+
+#fig 3
+file.copy("edits/repeat_distribution.pdf", figs_dir[3], overwrite = T)
+
+sum_bed <- mutate(rpt_bed, 
+                  repeats_single_assignment = ifelse(str_count(repeat_classes, ",")  > 0, "multiple_annotations", repeat_classes)) %>% 
+  dplyr::filter(best_features != "Total")
+
+ggplot(sum_bed, aes(repeat_present)) +
+  geom_bar(aes(fill = repeat_present)) +
+  ylab("variants called (n)") +
+  scale_fill_manual(values = color_fxn(12)) +
+  theme(
+    axis.title.x = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "none"
+  )
+p
+```
+
+ Number of editing sites found in each repeat class:
+ 
+```{r}
+
+rpt_bed %>%  
+  filter(repeat_present == "repeat") %>% 
+  dplyr::select(site.x:repeat_present) %>% 
+  unique() -> rpt_summary
+
+# summarize by repeat class
+rpt_summary %>% 
+  group_by(repeat_classes) %>% 
+  summarize(total_repeat_classes = n()) %>%
+  arrange(desc(total_repeat_classes)) -> rpt_summary
+
+rpt_summary
+
+# summarize all repeat categorys less than top 15 as other
+minor_repeat_count <- sum(rpt_summary[7:nrow(rpt_summary), ]$total_repeat_classes)
+minor_rpts <- data_frame(repeat_classes = "Other",
+                         total_repeat_classes = minor_repeat_count)
+
+res <- bind_rows(rpt_summary[1:6, ], minor_rpts)
+res <- mutate(res, 
+              repeat_classes = factor(repeat_classes,
+                                      level = rev(repeat_classes)))
+
+a <- ggplot(res, aes(repeat_classes, total_repeat_classes)) +
+  geom_bar( stat = "identity") +
+  xlab("Repeat Class") +
+  ylab("Number of A-to-I\nediting sites") +
+  coord_flip() + 
+  scale_fill_manual(values = color_fxn(12)) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "none"
+  )
+
+# summarize by repeat name
+rpt_bed %>%  
+  filter(repeat_present == "repeat") %>% 
+  dplyr::select(site.x:repeat_present) %>% 
+  unique() -> rpt_summary
+
+rpt_summary %>% 
+  group_by(repeat_names) %>% 
+  summarize(total_repeat_classes = n()) %>%
+  arrange(desc(total_repeat_classes)) -> rpt_summary
+
+rpt_summary
+
+# summarize all repeat categorys less than top 15 as other
+minor_repeat_count <- sum(rpt_summary[15:nrow(rpt_summary), ]$total_repeat_classes)
+minor_rpts <- data_frame(repeat_names = "Other",
+                         total_repeat_classes = minor_repeat_count)
+
+res <- bind_rows(rpt_summary[1:16, ], minor_rpts)
+res <- mutate(res, 
+              repeat_names = factor(repeat_names,
+                                      level = rev(repeat_names)))
+b <- ggplot(res, aes(repeat_names, total_repeat_classes)) +
+  geom_bar( stat = "identity") +
+  xlab("Repeat Name") +
+  ylab("Number of A-to-I\nediting sites") +
+  coord_flip() + 
+  scale_fill_manual(values = color_fxn(12)) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "none"
+  )
+
+b
+plt <- plot_grid(a, b)
+save_plot("edits/repeat_classification.pdf", plt, base_width = 8)
+# fig 3
+file.copy("edits/repeat_classification.pdf", figs_dir[3], overwrite = T)
+```
+
+
+Number of each repeat found in the Squirrel genome based on repeatmasker annotations:
+
+```{r}
+group_by(bed, name) %>% 
+  summarize(n = n()) %>% 
+  arrange(desc(n))
+
+
+```
+
+Mostly Sine related repeats. 
+
+```{r temp_plot}
+
+
+pdata_tidy <- pdata %>% 
+  dplyr::select(Animal, sacTb, State) %>% 
+  mutate(State = factor(State, 
+                         levels = state_order))
+
+p <- ggplot(pdata_tidy, aes(State, sacTb)) +
+  geom_boxplot(aes(fill = State))  +
+  scale_fill_manual(values = state_cols) +
+  ylab("Tb at collection") +
+  theme(axis.text.x = element_text(colour = state_cols, 
+                                   size = 16),
+        axis.text.y = element_text(size = 16),
+        axis.title = element_text(size = 18),
+        axis.title.x = element_blank(),
+        legend.position = "none")
+p
+save_plot("edits/mean_temperatures.pdf", p, base_width = 4)
+
+```
+
+### plot venn diagrams
+```{r plot_venns}
+
+read_sig_sites <- function(allele_name, ref, alt ) {
+  dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand", allele_name, 
+                        paste0(ref, "_", alt, "_filtered_sites_annotation.txt.gz")))
+   dat %>% 
+     filter(FDR < 0.01) %>% 
+     group_by(Region) %>% 
+     dplyr::select(Region, site)
+}
+
+ref_alt <- str_split(alleles, "_")
+
+sig_sites <- map2(alleles, ref_alt, ~read_sig_sites(.x, .y[1], .y[2]))
+
+names(sig_sites) <- alleles
+
+#sig_sites <- bind_rows(sig_sites, .id = "allele")
+lst_sites <- map(sig_sites, ~.x %>%  split(.$Region))
+lst_sites <- map(lst_sites, ~map(.x, ~ungroup(.x) %>% 
+                                   dplyr::select(site) %>% 
+                                   unlist()))
+lst_sites[[1]]
+
+library(eulerr)
+
+plot_proportional_venn <- function(fdr_filtered_sites, 
+                                    ref_nt, alt_nt, 
+                                   region_cols = region_cols,
+                                   save = F){
+  all_unique_sites <- unlist(fdr_filtered_sites) %>%
+    unique()
+  lgl_df <- map_df(fdr_filtered_sites, 
+                   ~all_unique_sites %in% .x)
+  
+  lgl_df <- as.data.frame(lgl_df)
+  if(  ncol(lgl_df) == 1) return("not enough sites to plot")
+  
+  fit <- euler(lgl_df)
+  if (save){
+    pdf(file.path("edits", paste0(ref_nt, "_", alt_nt, "_venn_diagrams.pdf")))
+    plt <- plot(fit, counts = TRUE, 
+               #key = list(space = "left", columns = 1), 
+               fill = region_cols, 
+               fill_opacity = 0.75,
+               main = paste0("Significant ", ref_nt, "-to-", alt_nt, " Variants\n"))
+    print(plt)
+    dev.off()
+  } else {
+  plot(fit, counts = TRUE, 
+     #key = list(space = "left", columns = 1), 
+     fill = region_cols, 
+     fill_opacity = 0.75,
+     main = paste0("Significant ", ref_nt, "-to-", alt_nt, " Variants\n"))
+  }
+}
+
+
+map2(lst_sites, 
+      ref_alt, 
+      ~plot_proportional_venn(.x, .y[1], .y[2], region_cols))
+
+walk2(lst_sites, 
+      ref_alt, 
+      ~plot_proportional_venn(.x, .y[1], .y[2], region_cols, save = T))
+```
+
+
+### plot additional sites
+
+```{r}
+
+read_all_site_proportions <- function(allele_name, ref, alt ) {
+    dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand", allele_name, 
+                        paste0(ref, "_", alt, "_filtered_sites_proportions.txt.gz")))
+    
+}
+
+ref_alt <- str_split(alleles, "_")
+
+all_sites_prop <- map2(alleles, ref_alt, ~read_all_site_proportions(.x, .y[1], .y[2]))
+names(all_sites_prop) <- alleles
+
+site_annotation$A_G_alleles %>% 
+  filter(str_detect(Disruption, "HIGH|MODERATE"), 
+         FDR < 0.01) %>% 
+  dplyr::select(site) %>% 
+  unlist() %>% 
+  unique() -> sig_impactful_variants
+
+# convert site names to gene_ids + site names
+#mutate(gene_id_unique = paste(GeneName, EFF, start, sep = "::"))
+site_annotation$A_G_alleles %>% 
+  filter(FDR < 0.01) %>% 
+  filter(EFF == "intergenic_region,custom" | EFF == "custom", !str_detect(AllANNInfo, "GENE_ID")) %>% 
+  dplyr::select(site) %>% 
+  unlist() %>% 
+  unique() -> sig_unannotated_variants
+
+# convert site names to gene_ids + site names
+#mutate(gene_id_unique = paste(GeneName, EFF, start, sep = "::"))
+site_annotation$A_G_alleles %>% 
+  filter(FDR < 0.01) %>% 
+  filter(EFF == "intergenic_region,custom" | EFF == "custom", str_detect(AllANNInfo, "GENE_ID")) %>% 
+  dplyr::select(site) %>% 
+  unlist() %>% 
+  unique() -> sig_novel_variants
+
+
+library(ComplexHeatmap)
+format_heatmap_matrix <- function(prop_data, na_value = NA) {
+  
+  ag_matrix <- as.data.frame(prop_data)
+  rownames(ag_matrix) <- ag_matrix[, 1]
+  ag_matrix[, 1] <- NULL
+  
+  # remove all NA rows
+  remove_na <- apply(ag_matrix, 1, function(x) !all(is.na(x)))
+  ag_matrix <- ag_matrix[remove_na, ]
+   
+  #remove all rows with SD = 0 (basically rows with all 1 or 0)
+  ag_matrix <- ag_matrix[apply(ag_matrix, 1, function(x) sd(x, na.rm = T) != 0), ]
+
+  #remove all rows with only 10 non-na values
+  remove_too_many_na <- apply(ag_matrix, 1, function(x) !(sum(is.na(x)) > 10))
+  ag_matrix <- ag_matrix[remove_too_many_na, ]
+  
+  #replace NaNs with NA
+   ag_matrix[] <- lapply(ag_matrix, function(x){ 
+    x[is.nan(x)] <- na_value 
+    x 
+  })
+  ag_matrix
+}  
+
+get_sig_heatmap <- function(vector_of_sites, data_matrix_to_subset, title = "", pdata = pdata, ...){  
+  all_sig_sites <- data_matrix_to_subset[rownames(data_matrix_to_subset) %in% vector_of_sites, ]
+
+  n_sites = nrow(all_sig_sites)
+  
+  pdata <- data_frame( "names" = colnames(data_matrix_to_subset)) %>%
+      mutate(simple_names = str_extract(names, "[HBM][0-9]+")) %>%
+      inner_join(. , pdata, by = c("simple_names" = "animal_number")) %>%
+      dplyr::select(names, simple_names, State, region) %>% as.data.frame() %>% 
+      arrange(State)
+  
+  reordered_cols <- pdata$names %>% unlist()
+
+  all_sig_sites <- all_sig_sites[reordered_cols]
+
+  ha2 <- HeatmapAnnotation(df = pdata[c('State', 'region')], 
+                                      col = list(
+                                        region = region_cols,
+                                          State = state_cols
+                                                 ),
+                           annotation_legend_param = list(State = list(title = "Hiberation\nState",
+                                                                       at = state_order, labels = state_order)))
+  ht <- Heatmap(all_sig_sites, 
+          show_column_names = FALSE,
+          show_row_dend = FALSE,
+          top_annotation = ha2,
+          row_title = "Sites",
+        column_title = paste0(title, n_sites),
+          heatmap_legend_param = list(
+            title = "Editing\nFrequency"),
+          ...)
+  
+  draw(ht, annotation_legend_side = "left", heatmap_legend_side = "left")
+}
+```
+
+```{r plot_boxplots}
+long_prop_dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand",
+                                    "A_G_alleles", "A_G_filtered_sites_proportions_tidy.txt.gz"))
+
+plot_sites <- function(prop_dat, 
+                       toptag_dat, 
+                       stat_region = "Medulla", 
+                       region_to_plot = "all", 
+                       sites_to_plot = c("GRIA2"),
+                       save = T,
+                       title = NULL, ...) {
+  
+    col_palette <- c(
+    SA = rgb(255, 0, 0, maxColorValue=255),
+    IBA = rgb(67, 205, 128, maxColorValue=255),
+    Ent = rgb(155, 48, 255, maxColorValue=255),
+    LT = rgb(25, 25, 112, maxColorValue=255),
+    Ar = rgb(0, 0, 255, maxColorValue=255),
+    SpD = rgb(255, 165, 0, maxColorValue=255) 
+  )
+
+  state_order = c(
+    "SA", "IBA", "Ent", "LT", "Ar", "SpD"
+  )
+
+  tt_dat_med <- filter_(toptag_dat, 
+                        lazyeval::interp(quote(Region == x), x = stat_region)) %>% 
+    filter(site %in% sites_to_plot) %>%  
+    dplyr::select(site) %>% 
+    unlist()
+  
+  tt_dat_med <- filter(toptag_dat, site %in% tt_dat_med)
+  
+  if (!region_to_plot == "all"){
+    prop_dat <- prop_dat %>% filter_(lazyeval::interp(quote(Region == x), 
+                                                      x = region_to_plot))
+  }
+  
+  plot_dat <- inner_join(prop_dat, 
+                         tt_dat_med, 
+                         by = c("site", "Region"))
+  
+  gene_labels <- plot_dat %>% 
+    dplyr::select(GeneName) %>% 
+    mutate(GeneName = str_split(GeneName, ",", simplify = T) %>% .[, 1]) %>% 
+    unlist()
+  
+  names(gene_labels) <- plot_dat %>% 
+    dplyr::select(site) %>% 
+    unlist()
+  
+  
+  plot_dat <- mutate(plot_dat, 
+                State = factor(State, 
+                        levels = state_order),
+                Region = ifelse(Region == "Forebrain",
+                                "Cerebrum",
+                                Region),
+                proportion = 100 * proportion)
+    
+  annot <- group_by(plot_dat, site, Region) %>% 
+    summarize(FDR = paste0("FDR = ", signif(min(FDR), 3)))
+
+  p <- ggplot(plot_dat, aes(State, proportion)) +
+    #geom_boxplot(aes(fill = State), outlier.shape = NA) +
+    geom_jitter(width = 0.25,
+              aes(color = State)) +
+    stat_summary(fun.y = "mean", 
+               fun.ymin = "mean", 
+               fun.ymax= "mean",
+               size = 0.3,
+               width = 0.75,
+               geom = "crossbar") +
+    facet_grid(Region ~ site, labeller = labeller(site = gene_labels)) + 
+    scale_color_manual(values = col_palette, guide = guide_legend(nrow = 1)) +
+    geom_text(data = annot, aes(x = 3.5, y = 95, label = FDR ), size = 3) + 
+    ylab("Editing Frequency (%)") + 
+    guides(fill=guide_legend(nrow=2,byrow=TRUE)) +
+    theme(legend.position = "top",
+          axis.text.x = element_blank(),
+          strip.text = element_text(size = 9)
+          )
+  if(save){
+    if(is.null(title)) {
+      save_plot(paste0("edits/", gene_labels[1], "_boxplot.pdf"), p, ...)
+    } else {
+      save_plot(title, p, ...) 
+    }
+  }
+  p
+}
+
+sites_to_plot <- c(ZCCHC8 = "JH393368.1::2076972::A",
+                   FBXW7 = "JH393499.1::2282179::T",
+                   EIF3A = "JH393296.1::8517456::T",
+                   ZC3H18 = "JH393451.1::1059495::T",
+                   CHD9 = "JH393285.1::6065218::A")
+
+map(sites_to_plot, ~plot_sites(prop_dat = long_prop_dat, 
+                   toptag_dat = site_annotation$A_G_alleles,
+                   sites_to_plot = .x))
+
+plot_sites(prop_dat = long_prop_dat, 
+                   toptag_dat = site_annotation$A_G_alleles,
+                   sites_to_plot = sites_to_plot, 
+                   title = "edits/validation_sites.pdf")
+
+new_validation_sites <- c(ENSSTOG00000009473 = "JH393369.1::1779832::T",
+                          AMIGO2 = "JH393322.1::5158676::T",
+                          NEIL1 = "JH393281.1::34191182::A",
+                          GABRA4 = "JH393292.1::13145599::T"
+                          )
+
+plot_sites(prop_dat = long_prop_dat, 
+                   toptag_dat = site_annotation$A_G_alleles,
+                   sites_to_plot = new_validation_sites, 
+                   title = "edits/new_validation_sites.pdf")
+
+
+map(sites_to_plot, ~plot_sites(prop_dat = long_prop_dat, 
+                   toptag_dat = site_annotation$A_G_alleles,
+                   sites_to_plot = .x,
+                   base_width = 4))
+
+long_prop_dat %>% 
+  dplyr::filter(site  == sites_to_plot["ZCCHC8"]) %>% 
+  group_by(Region, State) %>% 
+  summarize(mean(proportion, na.rm = T),
+            sd(proportion, na.rm = T)) %>% 
+  arrange(State)
+```
+
+### sites conserved in mammals
+
+```{r}
+
+cons_sites <- c(
+  PUM2 = "JH393303.1::11152839::A",
+  AZIN1 = "JH393280.1::40829797::A"
+)
+
+
+plot_sites(prop_dat = long_prop_dat, 
+                   toptag_dat = site_annotation$A_G_alleles,
+                   sites_to_plot = cons_sites, 
+                   title = "edits/mammalian_conserved_sites.pdf")
+          
+  tt_dat_med <- filter(site_annotation$A_G_alleles, 
+                        Region == "Medulla") %>% 
+    filter(site %in% cons_sites) %>%  
+    dplyr::select(site) %>% 
+    unlist()
+  
+  tt_dat_med <- filter(site_annotation$A_G_alleles, site %in% tt_dat_med)
+  
+  
+  plot_dat <- inner_join(long_prop_dat, 
+                         tt_dat_med, 
+                         by = c("site", "Region"))
+  
+  gene_labels <- plot_dat %>% 
+    dplyr::pull(GENE_NAME)
+  
+  names(gene_labels) <- plot_dat %>% 
+    dplyr::select(site) %>% 
+    unlist()
+  
+  
+  plot_dat <- mutate(plot_dat, 
+                State = factor(State, 
+                        levels = state_order))
+    
+  annot <- group_by(plot_dat, site, Region) %>% 
+    summarize(FDR = paste0("FDR = ", signif(min(FDR), 3)))
+
+  p <- ggplot(plot_dat, aes(State, proportion)) +
+    geom_boxplot(aes(fill = State), outlier.shape = NA, size = 0.25) +
+    geom_jitter(size = .25) +
+    facet_grid(Region ~ site, labeller = labeller(site = gene_labels)) + 
+    scale_fill_manual(values = state_cols, guide = guide_legend(nrow = 1)) +
+    geom_text(data = annot, aes(x = 3, y = 1.05, label = FDR ), size = 3) + 
+    ylab("Editing Frequency") + 
+    guides(fill=guide_legend(nrow = 1, byrow = TRUE)) +
+    theme(legend.position = "none",
+          axis.text.x = element_text(color = state_cols, size = 10),
+          axis.title.x = element_blank(),
+          strip.text.x = element_text(size = 12),
+          strip.text.y = element_text(size = 10)
+          )
+  p
+  save_plot("edits/mammalian_conserved_sites.pdf", p)
+
+  # fig 2 supplement
+  file.copy("edits/mammalian_conserved_sites.pdf", 
+            file.path(figs_dir[2], "supplement"),
+            overwrite = T)
+```
+          
+```{r make_single_plots}
+all_sites <- c(sites_to_plot, new_validation_sites)
+map2(all_sites, 
+    names(all_sites),
+    ~plot_sites(long_prop_dat, 
+                toptag_dat = site_annotation$A_G_alleles, 
+                sites_to_plot = .x, 
+                stat_region = "Forebrain", 
+                region_to_plot = "Forebrain",
+                title = paste0("edits/", .y, "_forebrain_boxplots.pdf"),
+                width = 3.5, height = 3.5))
+
+
+
+plot_sites(long_prop_dat, 
+                toptag_dat = site_annotation$A_G_alleles, 
+                sites_to_plot = all_sites[c("CHD9", "FBXW7", "NEIL1", "ZCCHC8")], 
+                stat_region = "Forebrain", 
+                region_to_plot = "Forebrain",
+                title = "edits/selectedsites_forebrain_boxplots.pdf",
+                height = 3.5, width = 9)
+
+plot_sites(long_prop_dat, 
+                toptag_dat = site_annotation$A_G_alleles, 
+                sites_to_plot = all_sites[c("CHD9", "FBXW7")],
+                stat_region = "Forebrain", 
+                region_to_plot = "Forebrain",
+                title = "edits/validation_ET_forebrain_boxplots.pdf",
+                height = 3.5, width = 7)
+
+```
+
+```{r, fig.width = 16, fig.height = 8}
+all_validation <- c(sites_to_plot, new_validation_sites)
+
+plot_sites(prop_dat = long_prop_dat, 
+                   toptag_dat = site_annotation$A_G_alleles,
+                   sites_to_plot = all_validation, 
+                   title = "edits/all_validation_sites.pdf", width = 16, height = 8)
+
+
+```
+
+```{r}
+site_annotation$A_G_alleles %>% 
+  dplyr::filter(FDR < 0.01) %>% 
+  dplyr::filter(EFF == "intergenic_region,custom" | EFF == "custom", 
+         str_detect(AllANNInfo, "GENE_ID")) %>% 
+  dplyr::arrange(FDR) %>% 
+  dplyr::mutate(novel_id = str_extract(AllANNInfo, "GENE_ID=([^;]*);")) %>% 
+  dplyr::group_by(GeneName) %>% 
+  dplyr::summarize(significant_sites = n(),
+            minimum_FDR = min(FDR),
+            id = first(novel_id)) %>% 
+  dplyr::arrange(minimum_FDR) %>% 
+  dplyr::slice(1:10) -> top_new_sites
+
+knitr::kable(top_new_sites, caption = "Sites not previously annotated, ranked by minimum FDR")
+
+
+site_annotation$A_G_alleles %>% 
+  dplyr::filter(FDR < 0.01) %>% 
+  dplyr::filter(EFF == "intergenic_region,custom" | EFF == "custom", 
+         str_detect(AllANNInfo, "GENE_ID")) %>% 
+  dplyr::arrange(FDR) %>% 
+  dplyr::select(site) %>% 
+  unique() %>% 
+  dplyr::slice(1:10) -> top_n_sites
+
+plot_sites(prop_dat = long_prop_dat, 
+                   toptag_dat = site_annotation$A_G_alleles,
+                   sites_to_plot = top_n_sites$site, 
+                   title = "edits/newly_annotated_sites.pdf", width = 16, height = 8)
+
+```
+
+
+```{r}
+# tidy pdata
+pdata <- readr::read_tsv(file.path(docs_dir, "BrainRegionRNAseqLibMetadata.txt"))
+pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+pdata <- mutate(pdata, 
+                animal_number = str_split(sample, "_", simplify = T)[, 1])
+```
+
+
+```{r plot_gria, cache.lazy=F}
+# plot GRIA2 site, which is filitered out due to not having a min < 0.95
+all_annotation <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_all_sites_proportions.txt.gz")
+
+gria2 <- c("JH393386.1::3912673::A")
+#plot_sites(prop_dat = gria2_annotation, 
+#                   toptag_dat = site_annotation$A_G_alleles,
+#                   sites_to_plot = c("JH393386.1::3912673::A"))
+long_all_prop <- gather(all_annotation, library, 
+                        proportion, -edit_site) 
+
+#convert proportion to percent
+long_all_prop <- mutate(long_all_prop, 
+                        proportion = proportion * 100,
+                        animal_number = str_match(library, "([MBH][0-9]+)_")[, 2],
+                        Region = ifelse(startsWith(animal_number, "M"),
+                                        "Medulla",
+                                        ifelse(startsWith(animal_number, "B"),
+                                                          "Forebrain", 
+                                                          "Hypothalamus")))
+
+long_all_prop <- left_join(long_all_prop,
+                           pdata, 
+                           by = "animal_number") %>% 
+  dplyr::select(colnames(long_all_prop), 
+                State)
+
+nonsig_conserved_sites <- c(
+                   `JH393386.1::3933856::A` = "GRIA2 R/G",
+                   `JH393386.1::3912673::A` = "GRIA2 Q/R",
+                   `JH393309.1::1039201::T` = "HTR2C I/M",
+                   `JH393309.1::1039203::T` = "HTR2C I/V",
+                   `JH393309.1::1039191::T` = "HTR2C I/V",
+                   `JH393309.1::1039196::T` = "HTR2C N/S")
+
+plot_non_sig <- function(long_all_prop, 
+                         sites){
+  positions <- names(sites)
+  
+  plot_dat <- dplyr::semi_join(long_all_prop, 
+                          data_frame(edit_site = positions),
+                          by = c("edit_site"))
+
+  plot_dat <- mutate(plot_dat, 
+                  State = factor(State, 
+                          levels = state_order),
+                Region = ifelse(Region == "Forebrain",
+                                "Cerebrum",
+                                Region))
+  
+  p <- ggplot(plot_dat, aes(State, proportion)) +
+       geom_jitter(width = 0.25,
+              aes(color = State)) +
+       stat_summary(fun.y = "mean", 
+               fun.ymin = "mean", 
+               fun.ymax= "mean",
+               size = 0.3,
+               width = 0.75,
+               geom = "crossbar") +
+      facet_grid(Region ~ edit_site, 
+                 labeller = labeller(edit_site = sites)) + 
+      scale_color_manual(values = state_cols, 
+                        guide = guide_legend(nrow = 1)) +
+      ylab("Editing Frequency (%)") + 
+      ylim(c(0, 100.0)) +
+      theme(legend.position = "top",
+            axis.text.x = element_blank(),
+            strip.text.x = element_text(size = 10))
+  p
+}
+
+p <- plot_non_sig(long_all_prop, nonsig_conserved_sites)
+p     
+ggsave("edits/GRIA2_htrc2_boxplot.pdf", p, width = 8)
+
+long_all_prop %>% dplyr::filter(Region == "Forebrain") -> tmp_df
+p <- plot_non_sig(tmp_df, nonsig_conserved_sites[c(2, 3)])
+p     
+ggsave("edits/GRIA2_htrc2_simple_boxplot.pdf", p, width = 4,
+       height = 3)
+
+sig_conserved_sites <- c(
+                 `JH393280.1::40829797::A` = "AZIN1 E/E",
+                 `JH393303.1::11152839::A` = "PUM2 3'UTR",
+                 `JH393281.1::34191182::A` = "NEIL1 K/R")
+
+p <- plot_non_sig(long_all_prop, sig_conserved_sites)
+p     
+ggsave("edits/neil1_azin1_pum2_boxplot.pdf", p, width = 4)
+
+#plot with just Forebrain
+p <- plot_non_sig(tmp_df, sig_conserved_sites)
+p     
+ggsave("edits/neil1_azin1_pum2_forebrain_boxplot.pdf", p, width = 5.5, height = 3)
+
+# plot with x.axis labeled
+  positions <- names(sig_conserved_sites[2])
+  
+  plot_dat <- dplyr::semi_join(tmp_df, 
+                          data_frame(edit_site = positions),
+                          by = c("edit_site"))
+
+  plot_dat <- mutate(plot_dat, 
+                  State = factor(State, 
+                          levels = state_order))
+  
+  p <- ggplot(plot_dat, aes(State, proportion)) +
+      geom_boxplot(aes(fill = State), outlier.shape= NA) +
+      geom_jitter(size = 0.5) +
+      facet_grid(Region ~ edit_site, 
+                 labeller = labeller(edit_site = sig_conserved_sites[2])) + 
+      scale_fill_manual(values = state_cols, 
+                        guide = guide_legend(nrow = 1)) +
+      ylab("Editing Frequency (%)") + 
+      ylim(c(0, 100.0)) +
+      theme(axis.text.x = element_text(colour = state_cols),
+            strip.text.x = element_text(size = 10),
+            legend.position = "none")
+  p
+ggsave("edits/pum2.pdf", p, width = 4, height = 3.5)
+```
+
+```{r plot_heatmaps, fig.height = 24, fig.width = 24}
+dat_matrix <- format_heatmap_matrix(all_sites_prop$A_G_alleles)
+
+site_annotation$A_G_alleles %>% 
+  filter(str_detect(Disruption, "HIGH|MODERATE"), 
+         FDR < 0.01) %>% 
+  mutate(unique_id =  ifelse(is.na(GeneName), site, str_c(GeneName, site,sep = "::"))) %>% 
+  dplyr::select(unique_id) %>% unlist -> sig_sites_to_plot
+
+site_annotation$A_G_alleles %>%
+  mutate(unique_id = ifelse(is.na(GeneName), site, str_c(GeneName, site,sep = "::"))) %>% 
+  dplyr::select(site, unique_id) %>% 
+  unique() -> site2id
+  
+id_map <- site2id$unique_id
+names(id_map) <- site2id$site
+
+gene_names <- id_map[rownames(dat_matrix)]
+gene_names <- gene_names[!is.na(gene_names)]
+dat_gene_matrix <- dat_matrix
+dat_gene_matrix <- dat_gene_matrix[rownames(dat_gene_matrix) %in% site2id$site, ]
+rownames(dat_gene_matrix) <-  gene_names
+
+get_sig_heatmap(sig_sites_to_plot, 
+                dat_gene_matrix, 
+                pdata = pdata, 
+                cluster_columns = F)
+
+pdf("edits/novel_variants_sig_a_g.pdf", useDingbats = F)
+get_sig_heatmap(sig_novel_variants, 
+                dat_matrix, 
+                pdata = pdata, 
+                cluster_columns = T, 
+                show_row_names = FALSE,
+                title = 
+                "Variants not found
+                within annotated 
+                transcripts
+                sites = ")
+dev.off()
+
+get_sig_heatmap(sig_unannotated_variants, 
+                dat_matrix, 
+                pdata = pdata, 
+                cluster_columns = T, 
+                show_row_names = FALSE,
+                title = 
+                "Variants not found
+                within annotated 
+                transcripts
+                sites = ")
+
+pdf("edits/unannotated_variants_sig_a_g.pdf", useDingbats = F)
+get_sig_heatmap(sig_unannotated_variants, 
+                dat_matrix, 
+                pdata = pdata, 
+                cluster_columns = T, 
+                show_row_names = FALSE,
+                title = 
+                "Variants not found
+                within annotated 
+                transcripts
+                sites = ")
+dev.off()
+
+```
+
+```{r, eval = F}
+site_annotation$A_G_alleles %>% 
+     filter(FDR < 0.01) %>% 
+     filter(EFF == "intergenic_region,custom" | EFF == "custom") %>% 
+     dplyr::select(site, Nucleotide) %>% 
+     unique() %>% 
+     mutate(Nucleotide = str_replace_all(Nucleotide, "n.|>|T|C|A|G", "")) %>% 
+     tidyr::separate(Nucleotide, c("First", "Second"), sep = ",", fill = "right") %>% 
+     mutate(First = as.integer(First),
+            Second = ifelse(is.na(Second), 0, Second),
+            Second = as.integer(Second),
+            .dist = ifelse(First == Second, First, pmax(c(First, Second)))) -> unannotated_distances
+  
+     
+unannotated_distances %>% 
+  filter(.dist < 3000) %>% 
+  nrow() -> n_close
+
+paste("there are", nclose, "annotated sites within 3kbp of an annotated gene")
+```
+
+
+```{r number_of_genes}
+library(eulerr)
+edits <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_filtered_sites_annotation.txt.gz")
+
+#remove intergenic variants
+sig_edits <- dplyr::filter(edits, 
+                    FDR < 0.01,
+                    EFF != "intergenic_region,custom",
+                    !is.na(GeneID))
+
+# make bed file to displaying on UCSC
+dplyr::filter(edits, 
+                    FDR < 0.01) %>% 
+   dplyr::select(site)  ->ssites
+   
+dplyr::semi_join(edits, ssites) -> ssites
+
+dplyr::arrange(ssites, Region) %>% 
+  dplyr::group_by(chrom, start, end, EFF, strand) %>% 
+  dplyr::summarize(FDR = concat(FDR)) %>% 
+  dplyr::mutate(score = 0) %>% 
+  dplyr::select(chrom, start, end, EFF, score, strand, FDR) %>% 
+  dplyr::arrange(chrom, start) -> edits_out
+
+write_tsv(edits_out, "edits/sig_edits.bed", col_names = F)
+ sig_edits$collapsed_geneName <- str_split(sig_edits$GeneName, ",") %>%
+    map(unique) %>% map(~.x[.x != ""]) %>%
+    map_chr(~ifelse(length(.x) > 1, paste(.x, collapse = ","), .x))
+
+
+sig_edits %>% 
+  dplyr::group_by(collapsed_geneName) %>% 
+  dplyr::summarize(total = n()) %>% 
+  ggplot(., aes(total)) + 
+  geom_histogram(bins = 150) +
+  xlab("Significant Editing Sites\n per Gene") +
+  theme_cowplot() -> p
+p
+ggsave("edits/significant_sites_per_gene.pdf", p, width = 4, height = 4)
+
+
+sig_edits %>% 
+  dplyr::group_by(collapsed_geneName) %>% 
+  dplyr::summarize(total = n()) %>% 
+  dplyr::arrange(desc(total)) %>% 
+  dplyr::slice(1:10) -> number_of_edits
+
+knitr::kable(number_of_edits,
+             caption = "number of significant edits found per gene_id" 
+            )
+
+sig_edits <- split(sig_edits, sig_edits$Region)
+
+#sig_edits <- sig_edits[c(2, 1, 3)]
+#names(sig_edits) <- names(sig_edits)[c(2, 1, 3)]
+
+sig_edits <- map(sig_edits, ~dplyr::select(.x ,collapsed_geneName) %>% 
+                   unique() %>% 
+                   unlist())
+
+sig_edits %>%  
+   unlist() %>% 
+   unique() %>% 
+   unname() %>% data_frame(genes = .) %>% write_tsv("edits/edited_genes.txt")
+
+dplyr::intersect(sig_edits[[1]], sig_edits[[2]]) %>% 
+  dplyr::intersect(sig_edits[[3]]) %>% 
+  data_frame(genes = . ) %>% write_tsv("edits/shared_edited_genes.txt")
+
+plot_prop_venn <- function(gene_lst, ...){
+  all_unique_sites <- unlist(gene_lst) %>% unique()
+  lgl_df <- map_df(gene_lst, ~all_unique_sites %in% .x)
+  lgl_df <- as.data.frame(lgl_df)
+  fit <- euler(lgl_df)
+  
+  plot(fit, counts = TRUE, 
+       # key = list(space = "left", columns = 1), 
+        fill = region_cols, 
+        fill_opacity = 0.75,
+       ...)
+
+}
+
+plot_prop_venn(sig_edits, main = "Number of shared genes\nwith editing sites")
+pdf("edits/genes_with_edits.pdf")
+plot_prop_venn(sig_edits, main = "Number of shared genes\nwith editing sites")
+dev.off()
+
+
+```
+
+

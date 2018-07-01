@@ -1,0 +1,939 @@
+---
+title: "Compare editing frequencies across tissues"
+author: "Kent Riemondy RBI"
+date: "6/18/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r ,message=FALSE, warning=FALSE}
+source("globals.R")
+```
+
+## Editing patterns across brain regions and other tissues
+
+
+```{r}
+pdata <- read_tsv(file.path(docs_dir, "BrainRegionRNAseqLibMetadata.txt"))
+pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+  
+pdata <- mutate(pdata,
+                region = ifelse(region == "Forebrain",
+                                "Cerebrum",
+                                region))
+pdata <- mutate(pdata, 
+                  abbrev_sample = str_split(sample, "_", simplify = T)[, 1])
+```
+
+```{r}
+gatk_annot <- read_tsv("edits/geo/gatk_sites_annotation.txt.gz")
+gatk_prop <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_filtered_sites_proportions.txt.gz")
+hyper_prop <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_proportions.txt.gz")
+hyper_annot <-  read_tsv("edits/geo/hyperedited_sites_annotation.txt.gz")
+
+sig_sites <- readxl::read_excel("Supplemental-Table-2.xlsx", 2)
+sig_gatk_sites <- filter(sig_sites, edit_type == "gatk") %>% pull(site) %>% unique()
+sig_hyper_sites <- filter(sig_sites, edit_type == "hyperedited") %>% pull(site) %>% unique()
+both_sites <- filter(sig_sites, edit_type == "both") %>% pull(site) %>% unique()
+
+gatk_prop_sig <- filter(gatk_prop, edit_site %in% sig_gatk_sites | edit_site %in% both_sites)
+hyper_prop_sig <- filter(hyper_prop, edit_site %in% sig_hyper_sites)
+hyper_prop_sig <- hyper_prop_sig[, colnames(gatk_prop_sig)]
+brain_site_proportions <- bind_rows(gatk_prop_sig, hyper_prop_sig)
+```
+
+```{r other_libs, eval = F}
+count_files <- dir(file.path(data_dir, 
+              "neonates_and_testes/vcf/variant_allele_counts_by_strand/A_G_alleles/counts"),
+    pattern = "_counts.txt.gz",
+    full.names = T)
+
+count_dat <- map(count_files, read_tsv)
+names(count_dat) <- basename(count_files)
+count_dat <- bind_rows(count_dat, 
+                       .id = "library")
+
+count_dat <- mutate(count_dat, 
+                    site = str_c(`#chrom`, pos, ref, sep = "::"))
+
+hyper_count_files <- dir(file.path(data_dir, 
+              "neonates_and_testes/hyperedits/site_counts/A_G_counts"),
+    pattern = "_counts.txt.gz",
+    full.names = T)
+
+hyper_count_dat <- map(hyper_count_files, read_tsv)
+names(hyper_count_dat) <- basename(hyper_count_files)
+hyper_count_dat <- bind_rows(hyper_count_dat, 
+                       .id = "library")
+
+hyper_count_dat <- mutate(hyper_count_dat, 
+                    site = str_c(`#chrom`, pos, ref, sep = "::"))
+
+count_dat <- bind_rows(list(gatk = count_dat, hyper = hyper_count_dat), .id = "type")
+sig_count_dat <- filter(count_dat, site %in% sig_sites$site)
+
+sig_count_dat %>% 
+  spread(type, library, `#chrom`, pos, ref, site)
+```
+
+```{r io_util_functions}
+bp_comp <- function(nt){
+  #return complementary basepair
+  comp <- c("A", "G", "T", "C")
+  names(comp) <- c("T", "C", "A", "G")
+  comp[nt] %>% unname()
+}
+
+group_dat <- function(.dir, .pattern, ...){
+  # read in and aggregate data into matrix-like format
+  files <- dir(.dir, 
+             full.names = T,
+             pattern = .pattern, ...)
+  dat <- suppressMessages(map(files,  ~readr::read_tsv(.x,  col_names = T, progress = F)))
+  dat <- Reduce(function(x, y) inner_join(x, y, by = c("#chrom", "pos", "ref", "base")), dat)
+  colnames(dat) <- c("#chrom", "pos", "ref", "base", basename(files))
+  dat
+}  
+
+write_gztsv <- function(df, name, ...){
+  # write output as gzipped, supply name without .gz
+  if(str_detect(name, ".gz$")){
+    uncompressed_name <- str_replace(name, ".gz$", "")
+  } else {
+    uncompressed_name <- name
+  }
+  write_tsv(df, uncompressed_name, ...)
+  system(paste0("gzip -f ", uncompressed_name))
+}
+```
+
+### load in the data
+
+```{r load_in_data}
+allele_counts_path <- file.path(data_dir, 
+              "neonates_and_testes/vcf/variant_allele_counts_by_strand/A_G_alleles/counts")
+ref <- "A"
+alt <- "G"
+ref_comp <- bp_comp(ref)
+alt_comp <- bp_comp(alt)
+
+dat <- group_dat(allele_counts_path, ".gz")
+hyper_dat <- group_dat(file.path(data_dir,
+                                 "neonates_and_testes/hyperedits/site_counts/A_G_counts"), 
+                       ".gz")
+
+dat <- bind_rows(dat,
+                 hyper_dat) 
+
+dat <- unique(dat)
+```
+
+### clean input
+
+```{r clean_up}
+
+clean_and_filter <- function(dat, ref_nt, alt_nt, ref_comp, alt_comp){
+  # filter for certain alleles, and spread each ref and alt count into seperate columns
+  
+  dat <- mutate(dat, 
+                 edit_site = paste(`#chrom`, pos, ref, sep = "::")) %>% 
+  dplyr::select(edit_site, everything())
+  
+  ag_dat <- filter(dat,
+                   (ref == ref_nt & base == alt_nt) |
+                   (ref == ref_nt & base == ref_nt) |
+                   (ref == ref_comp & base == alt_comp) |
+                  (ref == ref_comp & base == ref_comp)) %>%
+    mutate(
+           ref = ifelse(ref == ref_comp, ref_nt, ref),
+           base = ifelse(base == ref_comp, ref_nt, 
+                         ifelse(base == alt_comp, alt_nt, base)))
+  
+  ag_dat <- group_by(ag_dat, edit_site, `#chrom`, pos, ref)
+  #make sure alternate allele is second in group
+  if (ref_nt < alt_nt){
+    ag_dat <- arrange(ag_dat, `#chrom`, pos, ref, base)
+  } else {
+    ag_dat <- arrange(ag_dat, `#chrom`, pos, ref, desc(base))
+  }
+
+  ag_dat
+}
+
+get_long_data <- function(dat, ref_nt, alt_nt, output_prefix){
+  ag_dat <- group_by(dat, edit_site, `#chrom`, pos, ref)
+  
+  ag_wide <- summarize_at(ag_dat, vars(matches(".gz")),
+               funs(a = nth(., 1),b = nth(., 2)))
+  
+  ag_wide <- ungroup(ag_wide) %>%
+      dplyr::select(-`#chrom`, -pos, -ref) %>% 
+      dplyr::select(edit_site, everything())
+ 
+  ag_wide
+}
+
+get_proportion_dat <- function(dat, ref_nt, alt_nt, output_prefix){
+  ag_dat <- group_by(dat, edit_site, `#chrom`, pos, ref)
+  
+  ag_wide <- summarize_at(ag_dat, vars(matches(".gz")),
+               funs(nth(., 2) / (nth(., 1) + nth(., 2))))
+  
+  ag_wide <- ungroup(ag_wide) %>%
+      dplyr::select(-`#chrom`, -pos, -ref) %>% 
+      dplyr::select(edit_site, everything())
+  
+  ag_wide
+}
+
+get_matrix <- function(x) {
+  ag_matrix <- as.data.frame(x)
+  rownames(ag_matrix) <- ag_matrix[, 1]
+  ag_matrix[, 1] <- NULL
+  ag_matrix
+}
+
+
+dat <- clean_and_filter(dat, ref, alt, ref_comp, alt_comp) 
+long_dat <- get_long_data(dat, ref, alt)
+prop_dat <- get_proportion_dat(dat, ref, alt)
+matrix_dat <- get_matrix(prop_dat)
+
+sig_prop_dat <- filter(prop_dat, edit_site %in% brain_site_proportions$edit_site)
+
+all_prop_data <- left_join(sig_prop_dat,
+                           brain_site_proportions, by = "edit_site")
+```
+
+## Make a heatmap instead of scatter plot (too many samples...)
+
+
+```{r}
+all_prop_mat <- all_prop_data[, -1] %>% as.matrix
+rownames(all_prop_mat) <- pull(all_prop_data, edit_site)
+all_prop_mat <- all_prop_mat * 100 
+
+n_sites <- nrow(all_prop_mat)
+
+## add annotations to pdata 
+
+col_info <- data_frame( "names" = colnames(all_prop_mat)) %>%
+    mutate(simple_names = str_extract(names, "[HBM][0-9]+"))
+col_info <- mutate(col_info,
+                   simple_names = ifelse(str_detect(names, "^[PT]"),
+                                         str_extract(names, "^[PT][0-9DO]+_[HMT3]"),
+                                         simple_names))
+
+other_pdata <- tribble(
+  ~State, ~region, ~sample, ~abbrev_sample,
+   "SA", "Neonate Rostral", "P1_H", "P1_H",
+   "SA", "Neonate Medial", "P1_M", "P1_M",
+   "SA", "Neonate Caudal", "P1_T", "P1_T",
+   "SA", "Testes", "T77D_3", "T77D_3",
+   "SA", "Testes", "T77O_3", "T77O_3")
+        
+
+simple_pdata <-   dplyr::select(pdata, 
+                                State, region, sample, abbrev_sample) %>% 
+  unique() %>% 
+  na.omit()
+
+simple_pdata <- bind_rows(simple_pdata, other_pdata)
+
+simple_pdata <- left_join(col_info, simple_pdata,
+                          by = c("simple_names" = "abbrev_sample")) %>% 
+  dplyr::select(State, region, sample, names) %>% 
+  unique() %>% 
+  na.omit()
+
+
+simple_pdata <- as.data.frame(simple_pdata) %>% 
+    arrange(State)
+
+reordered_cols <- simple_pdata$names %>% unlist()
+
+all_prop_mat <- all_prop_mat[, reordered_cols]
+
+simple_pdata <- dplyr::rename(simple_pdata, 
+                             "Sample Groups" = State,
+                             "Tissue" = region)
+
+# figure out colors
+tissues <- unique(simple_pdata$Tissue) 
+new_tissues <- tissues[!tissues %in% names(region_cols)]
+
+new_cols <- brewer.pal(n = length(tissues), "Set1")
+names(new_cols) <- c(tissues[tissues %in% names(region_cols)],
+                     new_tissues)
+
+new_samples <- simple_pdata %>% filter(!Tissue %in% names(region_cols)) %>% pull(names)
+old_samples <- simple_pdata %>% filter(Tissue %in% names(region_cols)) %>% pull(names)
+
+ha1 <- HeatmapAnnotation(df = filter(simple_pdata,
+                                     names %in% old_samples) %>% 
+                           dplyr::select(`Sample Groups`, 
+                                  `Brain Region` = Tissue), 
+                                    col = list(
+                                        "Sample Groups" = state_cols,
+                                        "Brain Region" = c(region_cols,
+                                                     new_cols)
+                                               ),
+                         annotation_legend_param = list(
+                          "Sample Groups" = list(
+                                        at = state_order, 
+                                        labels = state_order)),
+                         gap = unit(2, "mm"),
+                         annotation_name_side = "left",
+                         annotation_name_offset = unit(1, "mm"))
+
+ha2 <- HeatmapAnnotation(df = filter(simple_pdata,
+                                     names %in% new_samples) %>% 
+                           dplyr::select(`Sample Groups`, 
+                                  `Other Tissues` = Tissue), 
+                                    col = list(
+                                        "Sample Groups" = state_cols,
+                                        "Other Tissues" = c(region_cols,
+                                                     new_cols)
+                                               ),
+                         annotation_legend_param = list(
+                          "Sample Groups" = list(
+                                        at = state_order, 
+                                        labels = state_order)),
+                         gap = unit(2, "mm"),
+                         annotation_name_side = "left",
+                         annotation_name_offset = unit(1, "mm"))
+
+ha3 <- HeatmapAnnotation(df = simple_pdata %>% 
+                           dplyr::select(`Sample Groups`, 
+                                  Tissue), 
+                                    col = list(
+                                        "Sample Groups" = state_cols,
+                                        "Tissue" = c(region_cols,
+                                                     new_cols)
+                                               ),
+                         annotation_legend_param = list(
+                          "Sample Groups" = list(
+                                        at = state_order, 
+                                        labels = state_order)),
+                         gap = unit(2, "mm"),
+                         annotation_name_side = "left",
+                         annotation_name_offset = unit(1, "mm"))
+
+ht1 <- Heatmap(all_prop_mat[, old_samples],
+        show_row_names = FALSE,
+        show_column_names = FALSE,
+        cluster_rows = T,
+        show_row_dend = F,
+        show_column_dend = F,
+        top_annotation = ha1,
+         column_title = "Comparison of editing sites in other tissues",
+        heatmap_legend_param = list(
+          title = "Percent\nEditing (%)"))
+
+ht2 <- Heatmap(all_prop_mat[, new_samples],
+               col = circlize::colorRamp2(c(0, 50, 100), 
+                                          colors = c("blue", "#EEEEEE", "red"), 
+                                          space = "LAB"),
+        show_row_names = FALSE,
+        show_column_names = FALSE,
+        cluster_rows = F,
+        show_row_dend = F,
+        show_column_dend = F,
+        top_annotation = ha2,
+        heatmap_legend_param = list(
+           at = c(0, 20, 40, 60, 80, 100)),
+           show_heatmap_legend = F)
+
+pdf("edits/sig_editing_sites_all_tissues.pdf", 
+    useDingbats = F, width = 8, height = 5)
+
+  draw(ht1 + ht2, annotation_legend_side = "left", 
+     gap = unit(1, "mm"), 
+  #   padding = unit(c(2, 2, 25, 2), 'mm'),
+   heatmap_legend_side = "left", row_dend_side = "left")
+dev.off()
+```
+
+
+```{r}
+
+raw_dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand","A_G_alleles/A_G_all_sites_raw_counts.txt.gz"))
+
+raw_dat <- filter(raw_dat, edit_site %in% rownames(all_prop_mat)) %>% 
+    ungroup() %>% 
+   dplyr::select(-c(`#chrom`:ref)) 
+
+other_raw_dat <- filter(ungroup(dat), edit_site %in% rownames(all_prop_mat)) %>%
+   dplyr::select(-c(`#chrom`:ref))
+
+count_data <- raw_dat %>% 
+  left_join(other_raw_dat, by = c("edit_site", "base")) %>% 
+  gather(key = "library", value = "counts", -edit_site, -base)
+
+count_data <- count_data %>% 
+  left_join(simple_pdata, by = c("library" = "names"))
+
+# set order
+count_data <- mutate(count_data,
+                     State = factor(`Sample Groups`, levels = state_order))
+
+count_data <- count_data %>% 
+  spread(base, counts)
+
+index_data <- group_by(count_data, State, Tissue) %>% 
+  summarize(editing_index = sum(G) / (sum(A) + sum(G))) %>% 
+  ungroup() 
+  
+
+p <- ggplot(index_data, aes(State, editing_index)) +
+  geom_point(aes(color = Tissue), show.legend = T,
+             size = 0.5) +
+  scale_colour_manual(values = new_cols) +
+  ylab("Editing Index") +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(size = 12, colour = state_cols),
+        legend.position = "top",
+        legend.title = element_blank())
+
+save_plot("edits/editing_index_across_tissues.pdf", 
+          p, base_aspect_ratio = 1.0)
+```
+
+### Coverage at sig sites
+
+
+```{r}
+n_sig_regions <- group_by(sig_sites, site) %>% 
+  summarize(n = n(),
+            region = str_c(Region, collapse = ",")) %>% 
+  arrange(desc(n))
+
+binned_sites <- map(unique(n_sig_regions$n),
+    ~filter(n_sig_regions, 
+            n == .x) %>% 
+      pull(site))
+
+# get raw counts
+
+regions = c("medulla", "hypothalamus", "brainrest")
+dat <- map(regions, ~group_dat(file.path(data_dir, 
+              "vcf/variant_allele_counts_by_strand/A_G_alleles/counts",
+              .x), 
+              ".gz"))
+names(dat) <- regions
+
+hyper_dat <- map(regions, ~group_dat(file.path(data_dir, 
+              "hyperedits/site_counts/A_G_counts",
+              .x), 
+              ".gz"))
+names(hyper_dat) <- regions
+
+combined_dat <- map2(dat, 
+            hyper_dat,
+            ~bind_rows(.x,
+                 .y) %>% 
+              unique(.))
+
+combined_dat <- map(combined_dat, 
+                    ~mutate(.x, edit_site = paste(`#chrom`, pos, ref, sep = "::")))
+```
+
+```{r lib_sizes, message=F}
+
+.dir <- file.path(data_dir, "star")
+star_report_files <- dir(.dir,
+                         pattern = "*_2pass_Log.final.out",
+                         recursive = T, full.names = T)
+
+star_reports <- suppressWarnings(map(star_report_files,
+                    ~read_tsv(.x, col_names = F)))
+
+star_report_names <- basename(star_report_files) %>%
+  str_replace(., "_2pass_Log.final.out", "")
+
+names(star_reports) <- star_report_names
+lib_sizes <- map(star_reports,
+                 ~dplyr::filter(.x,
+                                X1 == "Uniquely mapped reads number |") %>%
+                   dplyr::select(X2))
+
+lib_sizes <- bind_rows(lib_sizes, .id = "library") %>%
+  dplyr::rename(lib_size = X2) %>%
+  dplyr::mutate(lib_size = as.numeric(lib_size))
+
+extract_lib_sizes <- function(.names, lib_sizes_df) {
+  #get original mapped to exons count for selected libraries
+  suffix_names <- str_replace(.names, "_counts.txt.gz$", "")
+  suffix_names_df <- data_frame(original_name = suffix_names,
+                                fq_name = .names)
+  sizes <- left_join(suffix_names_df, lib_sizes_df, 
+                     by = c("original_name" = "library"))
+  sizes <- dplyr::select(sizes, -original_name)
+  sizes
+}
+
+lib_names <- map(combined_dat, ~colnames(.x) %>%
+                   str_subset(., ".gz$")) %>%
+  unlist() %>% unname()
+
+lib_sizes_df <- extract_lib_sizes(lib_names, lib_sizes)
+
+
+mod_combined_dat <- map(combined_dat,
+                      ~dplyr::select(.x, edit_site, base,
+                              -`#chrom`, -pos, -ref,
+                              ends_with(".gz")))
+
+mod_combined_dat <- map(mod_combined_dat,
+                        ~.x %>% 
+                          gather(library, counts, -edit_site, -base) %>% 
+                          left_join(., lib_sizes_df, by = c("library" = "fq_name")))
+
+mod_combined_dat <- map(mod_combined_dat,
+                        ~.x %>% 
+                          mutate(norm_counts = 1e6 * (counts / lib_size)))
+
+mod_combined_dat <- map(mod_combined_dat, 
+                        ~.x %>% 
+                          dplyr::select(edit_site, library, base, 
+                                        counts = norm_counts) %>% 
+                          spread(library, counts))
+
+```
+
+
+```{r}
+sig_combined_dat <- map(mod_combined_dat,
+                       ~filter(.x, edit_site %in% sig_sites$site))
+
+
+sig_combined_dat <- map(sig_combined_dat,
+                      ~dplyr::select(.x, edit_site, 
+                               -base, ends_with(".gz")))
+
+row_coverage <- map(sig_combined_dat, 
+                    ~rowMeans(.x[, -1]))
+sig_combined_dat$medulla$total_coverage <- row_coverage[[1]]
+sig_combined_dat$hypothalamus$total_coverage <- row_coverage[[2]]
+sig_combined_dat$brainrest$total_coverage <- row_coverage[[3]]
+  
+sig_combined_dat <- map(sig_combined_dat, 
+                        ~dplyr::select(.x, edit_site, total_coverage))
+sig_combined_dat <- map(sig_combined_dat, 
+                        ~dplyr::group_by(.x, 
+                                         edit_site) %>% 
+                          summarize(raw_count = sum(total_coverage)))
+sig_combined_dat <- bind_rows(sig_combined_dat, 
+                              .id = "region")
+
+sig_combined_dat <- left_join(sig_combined_dat, 
+                              n_sig_regions, by = c("edit_site" = "site"),
+                              suffix = c("_site",
+                                         "_site_sig"))
+
+sig_combined_plot_dat <- mutate(sig_combined_dat, 
+                           n_sig = as.factor(n),
+                           log2_count = log2(raw_count),
+                           region_site = ifelse(region_site == "medulla",
+                                           "Medulla",
+                                           ifelse(region_site == "hypothalamus",
+                                                  "Hypothalamus",
+                                                  "Cerebrum")),
+                           region_site = factor(region_site,
+                                                   levels = c(
+                                                     "Medulla",
+                                                     "Cerebrum",
+                                                     "Hypothalamus"
+                                                   )))
+
+p <- ggplot(sig_combined_plot_dat, 
+            aes(n_sig, log2_count)) +
+  geom_boxplot(aes(fill = region_site), coef = Inf) +
+  scale_fill_manual(values = region_cols, 
+                    name = "") +
+  labs(x = "# of Brain Regions Each\nSite is Called Signficiant",
+       y = expression(paste("Mean Normalized Coverage (log"[2],")"))) +
+  theme(legend.position = "top")
+p
+
+save_plot("edits/read_coverage_vs_n_regions.pdf", 
+          p)
+
+
+sig_combined_per_region<- mutate(sig_combined_dat, 
+                           region_site = ifelse(region_site == "medulla",
+                                           "Medulla",
+                                           ifelse(region_site == "hypothalamus",
+                                                  "Hypothalamus",
+                                                  "Forebrain")))
+
+
+sig_combined_per_region <- sig_combined_per_region %>% 
+  filter(str_detect(region_site_sig, region_site))
+
+sig_combined_plot_dat <- mutate(sig_combined_per_region, 
+                           n_sig = as.factor(n),
+                           log2_count = log2(raw_count),
+                           region_site =ifelse(region_site == "Forebrain",
+                                               "Cerebrum",
+                                               region_site))
+
+p <- ggplot(sig_combined_plot_dat, 
+            aes(n_sig, log2_count)) +
+  geom_boxplot(aes(fill = region_site), coef = Inf) +
+  facet_wrap(~region_site) +
+  scale_fill_manual(values = region_cols) +
+  labs(x = "# of Brain Regions Each\nSite is Called Signficiant",
+       y = expression(paste("Read Coverage (log"[2],")"))) +
+  theme(legend.position = "none")
+p
+
+save_plot("edits/read_coverage_vs_n_regions_found_in_each_region.pdf", 
+          p)
+
+```
+
+
+## compare brain regions 
+
+```{r}
+gatk_sites <- read_tsv("edits/A_G_filtered_fdr0.01_sites_annotation_kmeans.txt.gz")
+gatk_sites <- dplyr::filter(gatk_sites, 
+                            kmeans_cluster == 1) %>% 
+  dplyr::select(site, Region) %>% 
+  split(., .$Region) %>% 
+  map(., pull, site)
+
+hyperedited_sites <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_annotation_kmeans.txt.gz")
+hyperedited_sites <- hyperedited_sites %>% 
+  dplyr::filter(kmeans_cluster != 3, 
+                FDR < 0.01) %>% 
+  dplyr::select(site, Region) %>% 
+  split(., .$Region) %>% 
+  map(., pull, site)
+
+names(gatk_sites) <- map_chr(names(gatk_sites), 
+                             ~ifelse(.x == "Forebrain", 
+                            "Cerebrum",
+                            .x))
+
+names(hyperedited_sites) <- map_chr(names(hyperedited_sites), 
+                                    ~ifelse(.x == "Forebrain", 
+                            "Cerebrum",
+                            .x))
+
+set.seed(20171020)
+fit <- eulerr::euler(gatk_sites)
+
+pdf("edits/gatk_sites_per_region.pdf")
+plot(fit, 
+     fill = region_cols[c(3,2,1)],
+     fill_opacity = 0.55,
+     counts = list(cex = 2, col = "black"), 
+     lwd = 3,
+     cex = 2,   
+     main = NULL,
+     col = "black")
+dev.off()
+
+set.seed(20171020)
+fit <- eulerr::euler(hyperedited_sites)
+
+pdf("edits/hyperedited_sites_sites_per_region.pdf")
+plot(fit, 
+     fill = region_cols[c(3,2,1)],
+     fill_opacity = 0.55,
+     counts = list(cex = 2, col = "black"), 
+     lwd = 3,
+     cex = 2,   
+     main = NULL,
+     col = "black")
+dev.off()
+```
+
+
+## Finding editing sites that are different between tissues
+
+In this case, an editing site will be called as having a tissue specific difference if it is found significant in 1 or 2 regions, and has a similar coverage level in the non-significant tissue. 
+
+```{r}
+
+get_non_intersecting <- function(list_of_vectors) {
+  res <- list()
+  for(i in 1:length(list_of_vectors)){
+    others <- setdiff(1:length(list_of_vectors), i)
+    not_shared <- setdiff(list_of_vectors[[i]],
+            unname(unlist(list_of_vectors[others])))
+    res[[i]] <- not_shared
+  }
+  res
+}
+both_sites <- map2(gatk_sites, hyperedited_sites, c)
+tissue_edits <- get_non_intersecting(gatk_sites)
+names(tissue_edits) <- names(both_sites)
+
+tissue_edits <- map(tissue_edits, 
+                    ~data_frame(edit_site = .x)) %>% 
+  bind_rows(., .id = "region")
+
+tissue_edits_plt <- left_join(tissue_edits,
+                          sig_combined_dat,
+                          by = "edit_site") %>% 
+ mutate(region_site = ifelse(region_site == "medulla",
+                                           "Medulla",
+                                           ifelse(region_site ==
+                                                    "hypothalamus",
+                                                  "Hypothalamus",
+                                                  "Cerebrum")))
+
+
+tissue_edits_plt <- mutate(tissue_edits_plt, 
+                           log2_count = log2(raw_count))
+
+ggplot(tissue_edits_plt, 
+       aes(region_site, log2_count)) +
+  geom_boxplot(aes(fill = region_site), coef = Inf) +
+  facet_wrap(~region) +
+  scale_fill_manual(values = region_cols, 
+                    name = "") +
+  labs(x = "# of Brain Regions Each\nSite is Called Signficiant",
+       y = expression(paste("Mean Normalized Coverage (log"[2],")"))) +
+  theme(legend.position = "top",
+        axis.text.x = element_blank())
+
+
+sig_combined_per_region <- mutate(sig_combined_per_region,
+                                  region = ifelse(region_site == "Forebrain",
+                                                  "Cerebrum",
+                                                  region_site))
+tissue_edits_coverage <- left_join(tissue_edits,
+                          sig_combined_per_region,
+                          by = c("edit_site",
+                                 "region"))
+
+tissue_edits_coverage <- mutate(tissue_edits_coverage, 
+                                sig_site_count = raw_count) %>% 
+  dplyr::select(-raw_count, -region_site, -n, -region_site_sig)
+
+sig_combined_plot_dat <- mutate(sig_combined_dat, 
+                           region_site = ifelse(region_site == "medulla",
+                                           "Medulla",
+                                           ifelse(region_site == "hypothalamus",
+                                                  "Hypothalamus",
+                                                  "Cerebrum")))
+
+tissue_edits_coverage <- left_join(tissue_edits_coverage,
+                                   sig_combined_plot_dat,
+                                   by = c("edit_site"))
+
+hyper_annot_unique <- hyper_annot[!hyper_annot$site %in% gatk_annot$site, 
+                                  ]
+
+annot <- bind_rows(gatk_annot, hyper_annot_unique)
+annot <- annot %>% mutate(Region = ifelse(Region == "Forebrain",
+                                                    "Cerebrum",
+                                                    Region))
+
+fdr <- annot %>% dplyr::select(region = Region, site, FDR)
+
+tissue_edits_coverage <- left_join(tissue_edits_coverage, 
+                                   fdr, 
+                                   by = c("edit_site" = "site", "region_site" = "region"))
+
+non_edited_high_coverage <- tissue_edits_coverage %>% 
+   filter(raw_count >= sig_site_count,
+          region != region_site,
+          FDR > 0.5) 
+sig_edits <- tissue_edits_coverage %>% 
+  filter(FDR < 0.01, 
+         region == region_site)
+
+tissue_variable_edits <- bind_rows(non_edited_high_coverage, sig_edits) %>% 
+  group_by(edit_site) %>% 
+  mutate(n_sites_left = n()) %>% 
+  filter(n_sites_left > 1) 
+```
+
+
+
+```{r}
+long_prop_dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand",
+                                    "A_G_alleles", "A_G_filtered_sites_proportions_tidy.txt.gz"))
+
+annot_dat <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_filtered_sites_annotation.txt.gz")
+
+plot_sites <- function(prop_dat, 
+                       toptag_dat, 
+                       stat_region = "Medulla", 
+                       region_to_plot = "all", 
+                       sites_to_plot = c("GRIA2"),
+                       name_col = "site",
+                       save = T,
+                       title = NULL, ...) {
+  
+    col_palette <- c(
+    SA = rgb(255, 0, 0, maxColorValue=255),
+    IBA = rgb(67, 205, 128, maxColorValue=255),
+    Ent = rgb(155, 48, 255, maxColorValue=255),
+    LT = rgb(25, 25, 112, maxColorValue=255),
+    Ar = rgb(0, 0, 255, maxColorValue=255),
+    SpD = rgb(255, 165, 0, maxColorValue=255) 
+  )
+
+  state_order = c(
+    "SA", "IBA", "Ent", "LT", "Ar", "SpD"
+  )
+
+  tt_dat_med <- filter_(toptag_dat, 
+                        lazyeval::interp(quote(Region == x), x = stat_region)) %>% 
+    filter(site %in% sites_to_plot) %>%  
+    dplyr::select(site) %>% 
+    unlist()
+  
+  tt_dat_med <- filter(toptag_dat, site %in% tt_dat_med)
+  
+  if (!region_to_plot == "all"){
+    prop_dat <- prop_dat %>% filter_(lazyeval::interp(quote(Region == x), 
+                                                      x = region_to_plot))
+  }
+  
+  plot_dat <- inner_join(prop_dat, 
+                         tt_dat_med, 
+                         by = c("site", "Region"))
+  
+  gene_labels <- plot_dat[[name_col]] %>% unlist()
+  
+  names(gene_labels) <- plot_dat %>% 
+    dplyr::select(site) %>% 
+    unlist()
+  
+  plot_dat <- mutate(plot_dat, 
+                State = factor(State, 
+                        levels = state_order),
+                Region = ifelse(Region == "Forebrain",
+                                "Cerebrum",
+                                Region),
+                proportion = 100 * proportion)
+    
+  annot <- group_by(plot_dat, site, Region) %>% 
+    summarize(FDR = paste0("FDR = ", signif(min(FDR), 3)))
+
+  p <- ggplot(plot_dat, aes(State, proportion)) +
+    #geom_boxplot(aes(fill = State), outlier.shape = NA) +
+    geom_jitter(width = 0.25,
+              aes(color = State)) +
+    stat_summary(fun.y = "mean", 
+               fun.ymin = "mean", 
+               fun.ymax= "mean",
+               size = 0.3,
+               width = 0.75,
+               geom = "crossbar") +
+    facet_grid(Region ~ site, labeller = labeller(site = gene_labels)) + 
+    scale_color_manual(values = col_palette, guide = guide_legend(nrow = 1)) +
+    geom_text(data = annot, aes(x = 3.5, y = 95, label = FDR ), size = 3) + 
+    ylab("Editing Frequency (%)") + 
+    guides(fill=guide_legend(nrow=2,byrow=TRUE)) +
+    theme(legend.position = "top",
+          axis.text.x = element_blank(),
+          strip.text = element_text(size = 9)
+          )
+  if(save){
+    if(is.null(title)) {
+      save_plot(paste0("edits/", gene_labels[1], "_boxplot.pdf"), p, ...)
+    } else {
+      save_plot(title, p, ...) 
+    }
+  }
+  p
+}
+
+```
+
+
+```{r}
+tissue_variable_edits %>% 
+  filter(sig_site_count > 0.5) %>% 
+  arrange(FDR) %>% 
+  ungroup() %>% 
+  dplyr::slice(1:5) %>% 
+  dplyr::pull(edit_site) -> sites_to_plot
+
+mutate(annot_dat, annotation_id = ifelse(!is.na(GENE_NAME),
+                                         GENE_NAME,
+                                         ifelse(!is.na(DENOVO_GENE_ID),
+                                                DENOVO_GENE_ID,
+                                                str_c(chrom, ":", start))),
+       annotation_id = str_split(annotation_id, ",", simplify = T)[, 1]) -> annot_dat
+
+p <- plot_sites(long_prop_dat,
+           annot_dat, 
+          sites_to_plot = sites_to_plot, name_col = "annotation_id", save = F)
+p <- p + theme(strip.text = element_text(size = 9))
+save_plot("edits/tissue_specific_edits.pdf", p, 
+          base_height = 6,
+          base_width = 8)
+```
+
+
+```{r}
+raw_dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand",
+                              "A_G_alleles/A_G_all_sites_raw_counts.txt.gz"))
+
+raw_dat <- semi_join(raw_dat, 
+                     data_frame(edit_site = non_edited_high_coverage$edit_site),
+                     by = "edit_site")
+
+gatk_count_data <- raw_dat %>% 
+  dplyr::select(-c(`#chrom`:ref)) %>% 
+  gather(key = "library", value = "counts", -edit_site, -base)
+
+
+gatk_count_data <- gatk_count_data %>% 
+  mutate(abbrev_sample = str_match(library,
+                                   "[MHB][0-9]+")) %>% 
+  left_join(pdata, by = c("abbrev_sample"))
+
+## exclude brain regions that were significant for each site
+region_to_exclude <- non_edited_high_coverage %>%
+  dplyr::select(edit_site, region) %>% unique()
+
+
+gatk_count_data <- left_join(gatk_count_data,
+                             region_to_exclude, 
+                             by = "edit_site",
+                             suffix= c("_library", "_sigsite"))
+gatk_count_data <- filter(gatk_count_data,
+                          region_library != region_sigsite)
+# set gatk_count_data
+gatk_count_data <- mutate(gatk_count_data,
+                     State = factor(State, levels = state_order))
+
+gatk_count_data <- gatk_count_data %>% 
+  spread(base, counts)
+
+index_data <- group_by(gatk_count_data, State, 
+                       region_library) %>% 
+  summarize(editing_index = sum(G) / (sum(A) + sum(G))) %>% 
+  ungroup()
+
+
+p <- ggplot(index_data, aes(State, editing_index)) +
+  geom_smooth(method = "loess", color = "black", aes(group = region_library)) +
+  geom_point(aes(color = region_library), size = 3, show.legend = T) +
+  scale_colour_manual(values = region_cols) +
+  ylab("Editing Index") +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.text.x = element_text(size = 12, 
+                                   colour = state_cols),
+        legend.position = "top",
+        legend.title = element_blank(),
+        legend.text = element_text(size = 12))
+
+save_plot("edits/tissue_specific_editing_index.pdf", p,
+          base_height = 5, base_width = 4)
+```

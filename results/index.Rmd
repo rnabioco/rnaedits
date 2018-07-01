@@ -1,0 +1,44 @@
+---
+title: "Analysis Reports"
+author: "Kent Riemondy RBI"
+date: "8/16/2017"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Pipeline
+[Snakemake Pipeline](pipeline.html) for aligning data, calling variants, filtering variants and
+identifying variants that vary by state. Executed on Tesla. 
+
+
+## RNA-Seq differential expression analysis
+  Examine differential gene expression across heterothermic and homothermic states. 
+  
+* [QC of the data](mrna-qc.html)
+* [EdgeR Differentiation Expression](mrna-edgeR_de.html)
+* [Clustering results based on kmeans and RF classification](mrna-kmeans.html)
+* [GO analysis](mrna-go.html)
+
+## RNA-editing 
+  Examine dynamics of RNA editing across heterothermic and homothermic states
+  
+* [QC of the identified variants](edits-summary.html)
+* [Heatmaps to visualize editing sites](edits-visualizations.html)
+* [Sequence  features of editing sites](edits-features.html)
+* [Editing site structure](edits-structure.html)
+* [Editing site folding changes by temp](edits-ecs.html)
+* [sanger sequencing at early and later torpor](edits-sanger.html)
+* [Hyperediting sites](edits-hyperediting.html)
+* [Hyperediting sites conservation](edits-hyperediting-conservation.html)
+* [Hyperediting sites structure](edits-hyperediting-structure.html)
+* [Warm versus cold comparison](edits-warm_v_cold.html)
+
+## Correlation between editing, splicing, and Abundance
+
+* [Splicing exploratory data analysis](splicing-eda.html)
+
+
+
