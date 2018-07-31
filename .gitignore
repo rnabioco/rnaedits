@@ -4,3 +4,12 @@
 .Ruserdata
 *append_read_to_name
 *change_nt
+*.bb
+*.bed
+*.gp
+*.bam
+*.2bit
+*.sizes
+*.bgz
+*.vcf
+
