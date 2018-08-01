@@ -198,7 +198,7 @@ done
 out_files <- c("edits/motifs/radar_mm10.pdf",
                "edits/motifs/bp10_class1.pdf",
                "edits/motifs/bp10_class2.pdf")
-file.copy(out_files, figs_dir[2], overwrite = T)
+#file.copy(out_files, figs_dir[2], overwrite = T)
 
 ```
 
@@ -449,9 +449,6 @@ ggplot(clustered_df, aes(key, log10(value))) +
 
 ggsave("edits/closest_edits.pdf", width = 2.5, height = 4)
 
-#fig 2e
-file.copy("edits/closest_edits.pdf", 
-          figs_dir[2], overwrite = T)
 ```
 
 

@@ -1,7 +1,7 @@
 ---
 title: "EdgeR_analysis_mRNA"
 author: "Kent Riemondy RBI"
-date: "7/31/2017"
+date: "`r Sys.Date()`"
 output:
   html_document:
     code_folding: hide
@@ -124,34 +124,42 @@ simplified_pdata <- dplyr::select(pdata, sample, State, region) %>%
 
 ### Get transcript annotations
 
+```{r}
+Sys.setenv(dbases=db_dir)
+Sys.setenv(results=results_dir)
+Sys.setenv(lib=file.path(project_dir, "src"))
+
+dir.create("mrna", showWarnings = F)
+```
+
 ```{bash}
-lib="$HOME/Projects/Martin/lib"
-dbases="$HOME/Projects/Martin/dbases"
-results="$HOME/Projects/Martin/results"
 # extract out relevant info to make a look up table from stringtie/taco annotations
 
 if [ ! -s mrna/fixed_all95.bed.gz ] ;
   then
     python3 $lib/gtf_to_bed.py \
-      -i $results/2017-06-27/fixed.all95.gtf \
+      -i $dbases/denovo_annotation/fixed.all95.gtf \
       -a category gene_id transcript_id ref_gene_id ref_transcript_id gene_name\
       -c 3 \
       -o mrna/fixed_all95.bed
     gzip -f mrna/fixed_all95.bed
-    
+fi
+
+if [ ! -s mrna/Ictidomys_tridecemlineatus.spetri2.85.bed.gz ] ;
+  then
     # extract from ensembl 89 also
     python3 $lib/gtf_to_bed.py \
-      -i $dbases/ensembl85/Ictidomys_tridecemlineatus.spetri2.89.gtf.gz \
+      -i $dbases/ensembl85/Ictidomys_tridecemlineatus.spetri2.85.gtf \
       -a gene_biotype gene_id transcript_id gene_name \
       -c 3 \
-      -o mrna/Ictidomys_tridecemlineatus.spetri2.89.bed 
-    gzip -f mrna/Ictidomys_tridecemlineatus.spetri2.89.bed
+      -o mrna/Ictidomys_tridecemlineatus.spetri2.85.bed 
+    gzip -f mrna/Ictidomys_tridecemlineatus.spetri2.85.bed
 fi
 ```
 
 ```{r get_genes}
 stringtietaco <- read_tsv("mrna/fixed_all95.bed.gz", col_names = F)
-e89 <- read_tsv("mrna/Ictidomys_tridecemlineatus.spetri2.89.bed.gz", col_names = F)
+e89 <- read_tsv("mrna/Ictidomys_tridecemlineatus.spetri2.85.bed.gz", col_names = F)
 
 annotations <- list(stringtietaco, e89)
 names(annotations) <- c("denovo", "e89")
@@ -340,7 +348,7 @@ mats <- map(mats, mean_center)
 
 pwalk(list(sig_txs, mats, names(mats)),
       function(x, y, z) {
-        pdf(paste0(figs_dir[1], "/transcript_heatmap_", z, ".pdf"))
+        pdf(paste0("mrna/transcript_heatmap_", z, ".pdf"))
         get_sig_heatmap(x, y, title = z, pdata_mat = pdata, show_row_names = F, show_row_dend = FALSE)
         dev.off()
       })
@@ -453,9 +461,9 @@ ggplot(selected_rpkms,
 
 ggsave("mrna/adar_expression_patterns.pdf",
        width = 8.5, height = 6)
-ggsave(file.path(figs_dir[1], "adar_expression_patterns.pdf"),
-       width = 8.5, height = 6)
 
+file.copy("mrna/adar_expression_patterns.pdf",
+          sfigs_dir[16], overwrite = T)
 selected_rpkms %>% 
   group_by(gene_names, State) %>% 
   summarize(mean = mean(rpkm),
@@ -598,7 +606,11 @@ plts <- map2(unique(selected_rpkms$gene_names),
 plt <- plot_grid(plotlist = plts, 
                  labels = "AUTO", ncol = 2)
 plt
-ggsave(file.path(figs_dir[1], "mRNA_expression_validation_edits.pdf"), plt, width = 8, height = 10)
+
+
+ggsave("mrna/mRNA_expression_validation_edits.pdf", plt, width = 8, height = 10)
+file.copy("mrna/mRNA_expression_validation_edits.pdf", 
+          sfigs_dir[13], overwrite = T)
 ```
 
 ## plot seasonal edits
@@ -709,7 +721,7 @@ plts <- map2(genes_to_plot,
 
 plt <- plot_grid(plotlist = plts, ncol = 3)
 plt
-save_plot(file.path(figs_dir[1], "mRNA_expression_ncRNAs.pdf"), plt, base_width = 12, base_height = 4)
+save_plot("mrna/mRNA_expression_ncRNAs.pdf", plt, base_width = 12, base_height = 4)
 ```
 
 
@@ -745,7 +757,7 @@ plts <- map(unique(de_cpms$gene_names),
      ~gene_plot(.x, de_cpms, save = T))
 
 plts
-ggsave(file.path(figs_dir[1], "mRNA_expression_p54nrb.pdf"), plts[[3]], width = 8.5, height = 6)
+ggsave("mrna/mRNA_expression_p54nrb.pdf", plts[[3]], width = 8.5, height = 6)
 ```
 
 

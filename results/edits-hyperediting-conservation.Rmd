@@ -387,7 +387,18 @@ do echo "working on ${fasta}"
 done
 ```
 
-
+```{r}
+figs <- c(
+  "bp10_both",
+  "bp10_shuffled",
+  "bp10_nonsig",
+  "radar_mm9",
+  "radar_hg19"
+)
+walk(figs,
+     ~file.copy(file.path("hyperedits", "motifs", paste0(.x, ".pdf")),
+          figs_dir[3], overwrite = T))
+```
 ## Determine conservation of editing sites  
 
   Identified RNA editing sites will be compared to known editing sites in mouse and human RADAR databases. The [RADAR database](http://rnaedit.com/about/) has rna editing sites for mouse and human. The mouse data is probably more relevant but there are fewer sites (~8000 mouse versus 2 million human). The mouse data is the mm9 assembly and there is only a squirrel to mm10 liftover, so a sequential liftover is necessary. The human data is hg19 so a liftover from mm10 to hg19 can be done.
@@ -879,6 +890,8 @@ edits[2:7] <- map2(edits[2:7],
 openxlsx::write.xlsx(edits[1:7], "hyperedits/editing_site_conservation.xlsx")
 
 openxlsx::write.xlsx(edits[1:7], "hyperedits/Supplemental-Table-1.xlsx")
+file.copy("hyperedits/Supplemental-Table-1.xlsx",
+          file.path(results_dir, "Figures", "S1-Table.xlsx"))
 ```
 
 
@@ -999,7 +1012,7 @@ dev.off()
 
 #fig 3b
 file.copy("hyperedits/heatmap_for_conserved_sites.pdf",
-          figs_dir[2], overwrite = T)
+          figs_dir[3], overwrite = T)
 ```
   
 

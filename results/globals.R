@@ -47,19 +47,39 @@ color_fxn <- colorRampPalette(brewer.pal(9, "Spectral"))
 
 #### Paths ####
 
-project_dir <- path.expand("~/Projects/Martin")
+project_dir <- path.expand("~/Projects/publication_repos/rnaedits/")
 data_dir <- file.path(project_dir, "data")
 results_dir <- file.path(project_dir, "results")
 docs_dir <- file.path(project_dir, "docs")
 db_dir <- file.path(project_dir, "dbases")
 
 # vector of figure paths
+main_figs <- file.path(results_dir, "Figures", paste0("Figure_", 1:6))
+sup_figs <- file.path(results_dir, "Figures", paste0("Sup_Figure_", 1:17))
+all_figs <- c(main_figs, sup_figs)
+
+for(i in seq_along(all_figs)){
+  if(!dir.exists(all_figs[i])){
+    dir.create(all_figs[i], showWarnings = FALSE, recursive = TRUE)
+  } 
+}
+
 figs_dir <-  file.path(results_dir, "Figures") %>%
-  dir(pattern = "Figure_[1-4]$",
+  dir(pattern = "^Figure_[1-6]$",
       include.dirs = TRUE,
       full.names = T)
 
+sfigs_dir <-  file.path(results_dir, "Figures") %>%
+  dir(pattern = "Sup_Figure_[0-9]$",
+      include.dirs = TRUE,
+      full.names = T)
 
+sfigs_dir <- c(sfigs_dir,
+               file.path(results_dir, "Figures") %>%
+                 dir(pattern = "Sup_Figure_[1][0-9]$",
+                     include.dirs = TRUE,
+                     full.names = T)
+)
 ##### Functions ####
 
 #' When writing out excel workbooks using openxlsx::write.xlsx()

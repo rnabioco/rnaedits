@@ -1,9 +1,8 @@
-""" Snakefile to produce figures """
+""" Snakefile to run markdown and produce figures """
 import os
 RESULTS = "../"
 
-# RMDS that don't depend on other RMDs
-INDEP_RMDS = [
+RMDS = [
   "edits-sanger",
   "edits-visualizations",
   "edits-features",
@@ -21,9 +20,7 @@ INDEP_RMDS = [
 rule all:
   input:
     expand(os.path.join(RESULTS, "{rmd}.html"), 
-      rmd = INDEP_RMDS),
-   # expand(os.path.join(RESULTS, "{rmd}.html"), 
-   #  rmd = DEP_RMDS),
+      rmd = RMDS),
 
 rule hyperedits_structure:
   input:

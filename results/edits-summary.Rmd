@@ -1,7 +1,7 @@
 ---
 title: "Variant Summaries"
 author: "Kent Riemondy RBI"
-date: "August 25, 2017"
+date: "`r Sys.Date()`"
 ---
 
 ```{r setup, include=FALSE}
@@ -61,7 +61,7 @@ all_annot_site_names <- map(all_annot_sites,
                               unique())
 all_annot_site_names <- bind_rows(all_annot_site_names, .id = "allele") %>% 
   group_by(edit_site) %>% 
-  summarize(alleles = first(allele))
+  summarize(alleles = dplyr::first(allele))
 
 # filtered sites (Variant allele frequency > 5% < 95% )
 all_filtered_sites <- map2(alleles, ref_alt, 
@@ -84,7 +84,7 @@ all_filtered_site_names <- map(all_filtered_sites,
 all_filtered_site_names <- bind_rows(all_filtered_site_names, 
                                      .id = "allele") %>%  
   group_by(edit_site) %>% 
-  summarize(alleles = first(allele))
+  summarize(alleles = dplyr::first(allele))
 
 read_annotations <- function(allele_name) {
   dat <- read_tsv(file.path(data_dir, "vcf", 
@@ -102,7 +102,7 @@ unannotated <- map(all_annotations,
 
 unannotated <- bind_rows(unannotated, .id = "allele") %>%  
   group_by(site) %>% 
-  summarize(alleles = first(allele))
+  summarize(alleles = dplyr::first(allele))
 
 
 
@@ -208,6 +208,8 @@ p <- ggplot(all_annot_sites_summary, aes(allele_label, total_sites)) +
 p
 
 save_plot("edits/all_filtered_variant_sites.pdf", p)
+file.copy("edits/all_filtered_variant_sites.pdf", 
+          sfigs_dir[2], overwrite = T)
 
 all_annot_sites_summary %>% 
   dplyr::mutate(all_total = sum(total_sites),
@@ -245,14 +247,8 @@ p <- ggplot(enrichment_summary, aes(allele_label, enrichment)) +
 p
 
 save_plot("edits/all_filtered_variant_sites_enrichment.pdf", p)
-
-
-
-#fig2 supplement
-dir.create(file.path(figs_dir[2], "supplement"), recursive = T)
-file.copy("edits/all_filtered_variant_sites.pdf", 
-          file.path(figs_dir[2], "supplement"), overwrite = T)
-
+file.copy("edits/all_filtered_variant_sites_enrichment.pdf", 
+          sfigs_dir[2], overwrite = T)
 
 all_raw_sites_summary <-  map(all_raw_sites, 
                                 ~dplyr::select(.x, edit_site) %>%  
@@ -282,9 +278,6 @@ p
 
 save_plot("edits/all_raw_variant_sites.pdf", p)
 
-#fig2 supplement
-file.copy("edits/all_raw_variant_sites.pdf", 
-          file.path(figs_dir[2], "supplement"), overwrite = T)
 ```
 
 
@@ -588,6 +581,9 @@ b
            b, 
            base_width = 7, 
            base_height = 5.5)
+ 
+ file.copy("edits/all_sig_sites_annotated_proportions.pdf",
+           figs_dir[2], overwrite = T)
 ```
 
 ### genomic distribution
@@ -931,7 +927,8 @@ if(!file.exists(bed_file)){
   write_tsv(dat, bed_file)
 }
 ```
-```{r analyze_repeats}
+
+```{r analyze_repeats, eval = F}
 bed <- read_tsv(file.path(db_dir, "ensembl85", "ensembl85_rmsk.bed.gz"))
 
 new_chroms <- str_replace(sig_bed$chrom, ".1$", "")
@@ -1020,7 +1017,7 @@ p
 
  Number of editing sites found in each repeat class:
  
-```{r}
+```{r, eval = F}
 
 rpt_bed %>%  
   filter(repeat_present == "repeat") %>% 
@@ -1406,6 +1403,8 @@ map(sites_to_plot, ~plot_sites(prop_dat = long_prop_dat,
                    toptag_dat = site_annotation$A_G_alleles,
                    sites_to_plot = .x))
 
+file.copy("edits/ZCCHC8.pdf",
+          sfigs_dir[15], overwrite = TRUE)
 plot_sites(prop_dat = long_prop_dat, 
                    toptag_dat = site_annotation$A_G_alleles,
                    sites_to_plot = sites_to_plot, 
@@ -1496,10 +1495,6 @@ plot_sites(prop_dat = long_prop_dat,
   p
   save_plot("edits/mammalian_conserved_sites.pdf", p)
 
-  # fig 2 supplement
-  file.copy("edits/mammalian_conserved_sites.pdf", 
-            file.path(figs_dir[2], "supplement"),
-            overwrite = T)
 ```
           
 ```{r make_single_plots}
@@ -1512,7 +1507,7 @@ map2(all_sites,
                 stat_region = "Forebrain", 
                 region_to_plot = "Forebrain",
                 title = paste0("edits/", .y, "_forebrain_boxplots.pdf"),
-                width = 3.5, height = 3.5))
+                base_width = 3.5, base_height = 3.5))
 
 
 
@@ -1522,7 +1517,7 @@ plot_sites(long_prop_dat,
                 stat_region = "Forebrain", 
                 region_to_plot = "Forebrain",
                 title = "edits/selectedsites_forebrain_boxplots.pdf",
-                height = 3.5, width = 9)
+                base_height = 3.5, base_width = 9)
 
 plot_sites(long_prop_dat, 
                 toptag_dat = site_annotation$A_G_alleles, 
@@ -1530,7 +1525,7 @@ plot_sites(long_prop_dat,
                 stat_region = "Forebrain", 
                 region_to_plot = "Forebrain",
                 title = "edits/validation_ET_forebrain_boxplots.pdf",
-                height = 3.5, width = 7)
+                base_height = 3.5, base_width = 7)
 
 ```
 
@@ -1538,9 +1533,11 @@ plot_sites(long_prop_dat,
 all_validation <- c(sites_to_plot, new_validation_sites)
 
 plot_sites(prop_dat = long_prop_dat, 
-                   toptag_dat = site_annotation$A_G_alleles,
-                   sites_to_plot = all_validation, 
-                   title = "edits/all_validation_sites.pdf", width = 16, height = 8)
+           toptag_dat = site_annotation$A_G_alleles,
+           sites_to_plot = all_validation, 
+           title = "edits/all_validation_sites.pdf", 
+           base_width = 16, 
+           base_height = 8)
 
 
 ```
@@ -1555,7 +1552,7 @@ site_annotation$A_G_alleles %>%
   dplyr::group_by(GeneName) %>% 
   dplyr::summarize(significant_sites = n(),
             minimum_FDR = min(FDR),
-            id = first(novel_id)) %>% 
+            id = dplyr::first(novel_id)) %>% 
   dplyr::arrange(minimum_FDR) %>% 
   dplyr::slice(1:10) -> top_new_sites
 
@@ -1572,16 +1569,19 @@ site_annotation$A_G_alleles %>%
   dplyr::slice(1:10) -> top_n_sites
 
 plot_sites(prop_dat = long_prop_dat, 
-                   toptag_dat = site_annotation$A_G_alleles,
-                   sites_to_plot = top_n_sites$site, 
-                   title = "edits/newly_annotated_sites.pdf", width = 16, height = 8)
+           toptag_dat = site_annotation$A_G_alleles,
+           sites_to_plot = top_n_sites$site, 
+           title = "edits/newly_annotated_sites.pdf", 
+           base_width = 16, 
+           base_height = 8)
 
 ```
 
 
 ```{r}
 # tidy pdata
-pdata <- readr::read_tsv(file.path(docs_dir, "BrainRegionRNAseqLibMetadata.txt"))
+pdata <- readr::read_tsv(file.path(docs_dir,
+                                   "BrainRegionRNAseqLibMetadata.txt"))
 pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
 pdata <- mutate(pdata, 
                 animal_number = str_split(sample, "_", simplify = T)[, 1])
@@ -1662,6 +1662,8 @@ plot_non_sig <- function(long_all_prop,
 p <- plot_non_sig(long_all_prop, nonsig_conserved_sites)
 p     
 ggsave("edits/GRIA2_htrc2_boxplot.pdf", p, width = 8)
+file.copy("edits/GRIA2_htrc2_boxplot.pdf",
+          sfigs_dir[3])
 
 long_all_prop %>% dplyr::filter(Region == "Forebrain") -> tmp_df
 p <- plot_non_sig(tmp_df, nonsig_conserved_sites[c(2, 3)])

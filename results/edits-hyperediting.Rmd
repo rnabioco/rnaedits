@@ -396,6 +396,8 @@ p
 
 save_plot("hyperedits/all_alleles_all_regions.pdf", p, 
           base_width = 8, base_height = 12)
+file.copy("hyperedits/all_alleles_all_regions.pdf",
+          sfigs_dir[9], overwrite = T) 
 ```
 
 ```{r unique_sites_all_regions_states, cache = F}
@@ -438,7 +440,8 @@ p <- ggplot(all_regions, aes(allele, total)) +
     )
 p
 save_plot("hyperedits/all_sites.pdf", p)
-
+file.copy("hyperedits/all_sites.pdf",
+          sfigs_dir[9], overwrite = T)
 all_regions %>% 
   ungroup() %>% 
   mutate(total_sites = sum(total),
@@ -541,7 +544,6 @@ p
 
 save_plot("hyperedits/ag_sites_per_state.pdf", p, base_width = 6)
 
-
 p <- ggplot(A_G_summary_dat, aes(State, normalized_sites)) +
   geom_boxplot(aes(fill = State),
                outlier.shape = NA) +
@@ -588,6 +590,8 @@ p <- ggplot(A_G_summary_dat, aes(State, normalized_sites)) +
     legend.position = "none"
   )
 save_plot("hyperedits/ag_sites_per_state_mean_line.pdf", p, base_width = 6)
+file.copy("hyperedits/ag_sites_per_state_mean_line.pdf",
+          figs_dir[2], overwrite = T)
 
 
 A_G_summary_dat %>% 
@@ -659,7 +663,11 @@ p <- ggplot(summary_dat, aes(State, unique_sites)) +
 p
 save_plot("hyperedits/all_alleles_all_regions_clusters.pdf", p, 
           base_width = 8, base_height = 12)
+
+file.copy("hyperedits/all_alleles_all_regions_clusters.pdf",
+          sfigs_dir[9], overwrite = T)
 ```
+
 ## Shared sites
 Next we'll expore how many sites found in the warm samples are also found in the cold samples. 
 
@@ -706,7 +714,8 @@ plot(fit,
      col = "black")
      #auto.key = list(space = "left", columns = 1))
 dev.off() 
-
+file.copy("hyperedits/allregions_shared_hyperedits.pdf",
+          sfigs_dir[9], overwrite = T)
 plot(fit, 
      fill = state_cols,
      fill_opacity = 0.55,
@@ -1612,7 +1621,9 @@ walk2(de_results,
                         "_deresults.rds"))))
 
 
-variant_info <- "hyperedits/hyperedited_sites_annotated.bed.gz"
+variant_info <- file.path(data_dir,
+                          "hyperedits",
+                          "hyperedited_sites_annotated.bed.gz")
 variant_info_df <- suppressMessages(read_tsv(variant_info,
                          col_names = F))
 
@@ -1821,6 +1832,8 @@ draw(ha2 + ht1 + ht2, annotation_legend_side = "left",
 
 dev.off()
 
+file.copy("hyperedits/rotated_heatmap_k2.pdf",
+          sfigs_dir[4], overwrite = T)
 ```
 
 ### kmeans (k = 3)
@@ -1883,6 +1896,8 @@ p <- ggplot(elbow_dat, aes(k, WSS)) +
        title = "Hyperedited Sites")
 
 save_plot("hyperedits/wss_plot.pdf", p)
+file.copy("hyperedits/wss_plot.pdf", 
+          sfigs_dir[4], overwrite = T)
 ```
 
 ```{r}
@@ -2050,6 +2065,8 @@ draw(ha2 + ht1 + ht2 + ht3, annotation_legend_side = "left",
 
 dev.off()
 
+file.copy("hyperedits/rotated_heatmap_k3.pdf",
+          figs_dir[2], overwrite = T)
 ```
 
 
@@ -2439,6 +2456,8 @@ ggplot(index_data, aes(State, editing_index)) +
 ggsave("hyperedits/editing_index_across_states_by_cluster_kmeans.pdf", 
        width = 9.5, height = 5.5)
 
+file.copy("hyperedits/editing_index_across_states_by_cluster_kmeans.pdf",
+          figs_dir[2], overwrite = T)
 # split out gatk from hyperedits
 gatk <- dplyr::filter(index_data, 
                       str_detect(site_type, "GATK"))
@@ -2594,7 +2613,8 @@ plot(fit,
 pdf("hyperedits/gatk_vs_hyperedits_euler.pdf",
     width = 4, 
     height = 4)
-
+file.copy("hyperedits/gatk_vs_hyperedits_euler.pdf",
+          figs_dir[3], overwrite = T)
 plot(fit, 
      labels = c("",""),
      fill = state_cols,
@@ -2642,6 +2662,9 @@ plot(fit,
 pdf("hyperedits/gatk_vs_hyperedits_euler_nonsig.pdf",
     width = 4, 
     height = 4)
+
+file.copy("hyperedits/gatk_vs_hyperedits_euler_nonsig.pdf",
+          figs_dir[3], overwrite = T)
 
 plot(fit, 
      labels = c("",""),
@@ -2812,7 +2835,8 @@ ggplot(index_data, aes(State, editing_index)) +
 ggsave("hyperedits/editing_index_torpor_enriched_v_constitutive.pdf", 
        width = 4.5, height = 4)
 
-
+file.copy("hyperedits/editing_index_torpor_enriched_v_constitutive.pdf",
+          figs_dir[3], overwrite = T)
 ```
 
 ## Heatmaps Combined GATK + Hyperedits

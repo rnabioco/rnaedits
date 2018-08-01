@@ -17,7 +17,7 @@ Minor edits to format and ploting by K.R.
 ## First read in the data
 
 ```{r}
-mydata <- read.csv("edits/editingData4R.txt", sep = "\t")
+mydata <- read.csv(file.path(docs_dir, "editingData4R.txt"), sep = "\t")
 mydata
 str(mydata)
 summary(mydata)
@@ -198,12 +198,14 @@ p
 
 
 out_plt <- plot_grid(plt, p, align = "hv", rel_widths = c(1.4, 2))
-out_plt 
+out_plt  
 
 save_plot("edits/sanger_validation_compare_to_seq.pdf", out_plt, 
           base_width = 8,
           base_height = 4)
 
+file.copy("edits/sanger_validation_compare_to_seq.pdf",
+          figs_dir[6], overwrite = T)
 # old boxplot code
 
 #p <- ggplot(plot_dat, aes(State, proportion)) +

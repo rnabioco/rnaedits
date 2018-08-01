@@ -16,10 +16,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Check QC metrics for Fastq samples
 
-1) Fastq read length
-2) Per base quality scores 
-3) Aligned Fragment length
-
 ## Read length
 
 ```{r, message=F, warning = F}
@@ -31,189 +27,6 @@ library(RColorBrewer)
 library(cowplot)
 source("globals.R") # defines paths for relevant directories
 ```
-
-```{r}
-
-files <- dir(file.path(data_dir, "qc_stats"), 
-           pattern = "*001.txt", 
-           recursive = T,
-           full.names = T)
-
-dat <- suppressMessages(map(files, ~read_tsv(.x,
-                            skip = 1)))
-
-names(dat) <- basename(files)
-
-dat <- bind_rows(dat, .id = "library")
-
-# extract out total catagory
-group_by(dat, library) %>% 
-  arrange(desc(POS), .by_group = T) %>% 
-  mutate(total = dplyr::first(`#bases`)) -> dat
-
-# drop POS == ALL rows and calculate % of reads
-filter(dat, POS != "ALL") %>% 
-  mutate(POS = as.numeric(POS),
-         obs = (`#bases` / total),
-         exp = (last(`#bases`) / total),
-         Fraction_of_expected_bases = obs / exp
-         ) %>% 
-  dplyr::rename(Cycle = POS) -> dat
-
-# add in medulla, forebrain, or hypothalamus label
-mutate(dat,
-       region = ifelse(str_detect(library, 
-                                  "M"), 
-                                  "Medulla",
-                                  ifelse(str_detect(library, "H"),
-                                             "Hypothalamus", 
-                                             ifelse(str_detect(library, "B"),
-                                                        "Forebrain", 
-                                                        "NA")))) -> dat
-
-# add in read 1 or read 2
-mutate(dat,
-       read = ifelse(str_detect(library, 
-                                  "R1"), 
-                                  "R1",
-                                  ifelse(str_detect(library, "R2"),
-                                             "R2", "NA"))) -> dat
-
-ggplot(dat, 
-       aes(Cycle, Fraction_of_expected_bases)) +
-  geom_point(aes(color = region), size = 0.25, alpha = 1) +
-  ylab("Fraction of expected\nbases at each cycle") +
-  scale_color_brewer(palette = "Dark2") +
-  facet_grid(region~read) +
-  geom_vline(aes(xintercept = 35)) +
-  labs(title = "The Hypothalmus and Medulla libraries are trimmed",
-       subtitle = "bcl2fastq defaults to keep reads with \nat least 35 bases after trimming adapters\n(see vertical line at cycle 35)")
-```
-
-It appears that the hypothalamus and medulla samples were trimmed. The trimming appears to be done by bcl2fastq, due to the drop in read lengths after position 35, which is the default minimum read length to keep after trimming. Perhaps the trimming was done by the core during demultiplexing. However ideally we should upload the untrimmed fastqs to the SRA/GEO if possible. 
-
-
-## Quality scores
-
-```{r}
-ggplot(dat, 
-       aes(Cycle, avgQ)) +
-  geom_point(aes(color = region), size = 0.25, alpha = 1) +
-  ylab("Average Quality Scores at each cycle") +
-  scale_color_manual(values = region_cols) +
-  facet_grid(region~read) +
-  labs(title = "Average Quality Scores")
-
-ggsave("mrna/qual_scores.pdf")
-```
-
-Quality scores look good. 
-
-
-## Insert length
-
-```{r}
-files <- dir(file.path(data_dir,"qc_stats", "insert_sizes"), 
-           pattern = ".txt", 
-           recursive = T,
-           full.names = T)
-
-
-dat <- suppressMessages(map(files, ~read_tsv(.x,
-                            n_max = 2,
-                            comment = "#",
-                            col_names = F)))
-add_colnames <- function(x, y){
-  colnames(x) <- y
-  x
-}
-dat <- map(dat, ~add_colnames(.x, .x[1, ]) %>% .[-c(1), ])
-
-names(dat) <- basename(files)
-
-dat <- bind_rows(dat, .id = "library")
-
-# add in medulla, forebrain, or hypothalamus label
-mutate(dat,
-       region = ifelse(str_detect(library, 
-                                  "M"), 
-                                  "Medulla",
-                                  ifelse(str_detect(library, "H"),
-                                             "Hypothalamus", 
-                                             ifelse(str_detect(library, "B"),
-                                                        "Forebrain", 
-                                                        "NA"))),
-       MEDIAN_INSERT_SIZE = as.numeric(MEDIAN_INSERT_SIZE)) -> dat
-
-ggplot(dat, 
-       aes(region, MEDIAN_INSERT_SIZE)) +
-  geom_boxplot(aes(fill = region)) + 
-  geom_jitter() +
-  scale_fill_brewer(palette = "Dark2") +
-  labs(y = "Median insert size per library")
-
-dat %>% 
-  dplyr::select(library,
-                MEAN_INSERT_SIZE,
-                STANDARD_DEVIATION) %>% 
-  mutate(fq_name = str_split(library, 
-                             "_2pass", 
-                             simplify  = T)[, 1],
-         r1_fq = str_c(fq_name, "_R1_001.fastq.gz"),
-         r2_fq = str_c(fq_name, "_R2_001.fastq.gz")) %>% 
-  dplyr::select(r1_fq, r2_fq, MEAN_INSERT_SIZE, STANDARD_DEVIATION) -> out
-
-out 
-write_tsv(out, file.path(docs_dir, "pe_fq_info_for_geo.txt"))
-```
-
-The inferred insert sizes from the STAR alignments are shorter than 300 basepairs. Therefore many of the paired end read alignments will overlap to some degree. This isn't really a problem for most applications and is handled correctly by STAR and HaplotypeCaller. The plot below shows that same data but plots the distribution of insert sizes per library. 
-
-```{r}
-dat <- suppressMessages(map(files, ~read_tsv(.x,
-                            comment = "#",
-                            col_names = F,
-                            skip = 3)))
-add_colnames <- function(x, y){
-  colnames(x) <- y
-  x
-}
-dat <- map(dat, ~add_colnames(.x, .x[1, ]) %>% .[-c(1), ])
-
-names(dat) <- basename(files)
-
-dat <- bind_rows(dat, .id = "library")
-
-# add in medulla, forebrain, or hypothalamus label
-mutate(dat,
-       region = ifelse(str_detect(library, 
-                                  "M"), 
-                                  "Medulla",
-                                  ifelse(str_detect(library, "H"),
-                                             "Hypothalamus", 
-                                             ifelse(str_detect(library, "B"),
-                                                        "Forebrain", 
-                                                        "NA"))),
-       insert_size = as.numeric(insert_size),
-       count = as.numeric(All_Reads.fr_count)) -> dat
-
-group_by(dat, library) %>% 
-  mutate(max_count = max(count),
-         proportion = count / max_count) -> dat
-
-reds <- brewer.pal(n = 3, name = "Reds")
-ggplot(dat, 
-       aes(library, insert_size)) +
-  geom_point(aes(color = count)) +
-  facet_wrap(~region, drop = T, scale = "free") +
-  theme(axis.text.x = element_text(size = 3, angle = 90)) +
-  scale_color_continuous(low = reds[1], 
-                         high = reds[3],
-                         name = "Count of observed\n insert sizes")
-
-```
-
-
 
 ## Read alignments
 
@@ -314,7 +127,7 @@ b
 plt <- plot_grid(a, b, labels = "AUTO")
 plt
 save_plot("mrna/qc_alignments.pdf", plt, base_width = 8)
-file.copy("mrna/qc_alignments.pdf", figs_dir[1], overwrite = T)
+file.copy("mrna/qc_alignments.pdf", sfigs_dir[1], overwrite = T)
 ```
 
 ### write out table
@@ -473,130 +286,7 @@ qc_dat_summary <- dplyr::select(qc_dat_summary,
                 fastq_id, sample_title, 
                 sample_id, region, State, sacTb, everything()) %>% 
   dplyr::rename(`Number of reads after quality and adapter trimming` = `Number of input reads`)
-openxlsx::write.xlsx(qc_dat_summary, "qc_summary_statistics.xlsx")
-```
-
-
-## Mismatch profile
-
-Check the proportion and types of mismatches along the read to see if any trimming is necessary. 
-
-```{r mismatch, message = F}
-mm_files <- list.files(file.path(data_dir, "qc_stats"),
-                       recursive = T,
-                       full.names = T,
-                       pattern = ".mismatch_profile.xls")
-
-mm_dat <- map(mm_files, ~read_tsv(.x))
-names(mm_dat) <- basename(mm_files)
-
-map(mm_dat, 
-    ~gather(., mismatch, count, -read_pos, -sum)) -> mm_dat 
-
-mm_summary <- bind_rows(mm_dat, .id = "file")
-mm_summary <- mm_summary %>% 
-  mutate(region = ifelse(str_detect(file, "B"),
-                         "Forebrain",
-                         ifelse(str_detect(file, "M"),
-                                "Medulla",
-                                ifelse(str_detect(file, "H"),
-                                       "Hypothalamus", NA))))
-mm_summary <- group_by(mm_summary,
-                       read_pos, mismatch, region) %>% 
-  summarize(mean_mm = mean(count, na.rm = T),
-            sd_mm = sd(count, na.rm = T))
-
-ggplot(mm_summary, aes(read_pos, mean_mm)) +
-  geom_line() +
-  facet_grid(region~mismatch) +
-  scale_x_continuous(breaks = seq(0, 150, 150))
-
-ag_summary <- dplyr::filter(mm_summary,
-                            mismatch == "A2G")
-
-ggplot(ag_summary, aes(read_pos, mean_mm)) +
-  geom_line() +
-  facet_grid(region~mismatch)+
-  scale_x_continuous(breaks = seq(0, 150, 10))
-```
-
-
-There is a strange enrichment for A-to-G, C-to-T, G-to-A, and T-C in the first ~5 bases of the read. Not sure what this means, but is reminiscent of the SNP profile from the unfiltered variants.
-
-### Check the position of editing sites in reads
-
-One possible issue is that mismatches are common at the ends of reads due to random hexamer mispriming. I'm not sure if these libraries were generated in this fashion, need to check with Sandy. It's important to check if the identified editing sites are not positionally enriched along the read length. See:
-Comment on “Widespread RNA and DNA Sequence Differences in the Human Transcriptome” Wei Lin,1 Robert Piskol,Meng How Tan,2 Jin Billy Li2
-http://science.sciencemag.org/content/335/6074  
-and  
-http://science.sciencemag.org/content/335/6074/1302.3.full  
-and  
-http://science.sciencemag.org/content/335/6074/1302.4.full  
-
-I wrote a python script [check_editposition.py](../../../../lib/check_editposition.py) that parses the bam alignments (2pass non-split alignments), and determines where in each read the editing position occurs. If the editing site contains a mismatch to the reference (i.e. is edited) then the site is counted. 
-
-```{r, message=F, fig.width=12}
-mm_files <- list.files(file.path(data_dir, 
-                                 "edit_sites", 
-                                 "nonsig_edit_positions"),
-                       recursive = T,
-                       full.names = T,
-                       pattern = "_editpos.txt$")
-
-mm_dat <- map(mm_files, ~read_tsv(.x))
-names(mm_dat) <- basename(mm_files)
-
-mm_summary <- bind_rows(mm_dat, .id = "file")
-mm_summary <- mm_summary %>% 
-  mutate(region = ifelse(str_detect(file, "B"),
-                         "Forebrain",
-                         ifelse(str_detect(file, "M"),
-                                "Medulla",
-                                ifelse(str_detect(file, "H"),
-                                       "Hypothalamus", NA))))
-mm_summary <- group_by(mm_summary,
-                       position, region) %>% 
-  summarize(mean_mm = mean(total_reads, na.rm = T),
-            sd_mm = sd(total_reads, na.rm = T))
-
-ggplot(mm_summary, aes(position, mean_mm)) +
-  geom_line() +
-  facet_grid(~region) +
-  scale_x_continuous(breaks = seq(0, 150, 25)) +
-  labs(title = "Non-significant A-to-G SNVs")
-```
-
-```{r sig_edits, message=F}
-mm_files <- list.files(file.path(data_dir, 
-                                 "edit_sites", 
-                                 "edit_positions"),
-                       recursive = T,
-                       full.names = T,
-                       pattern = "_editpos.txt$")
-
-mm_dat <- map(mm_files, ~read_tsv(.x))
-names(mm_dat) <- basename(mm_files)
-
-mm_summary <- bind_rows(mm_dat, .id = "file")
-mm_summary <- mm_summary %>% 
-  mutate(region = ifelse(str_detect(file, "B"),
-                         "Forebrain",
-                         ifelse(str_detect(file, "M"),
-                                "Medulla",
-                                ifelse(str_detect(file, "H"),
-                                       "Hypothalamus", NA))))
-mm_summary <- group_by(mm_summary,
-                       position, region) %>% 
-  summarize(mean_mm = mean(total_reads, na.rm = T),
-            sd_mm = sd(total_reads, na.rm = T))
-
-ggplot(mm_summary, aes(position, mean_mm)) +
-  geom_line() +
-  facet_grid(~region) +
-  scale_x_continuous(breaks = seq(0, 150, 25)) +
-  labs(title = "Significant A-to-G SNVs")
-
-
+openxlsx::write.xlsx(qc_dat_summary, "mrna/qc_summary_statistics.xlsx")
 ```
 
 ## metadat formatting for GEO
@@ -652,40 +342,6 @@ metadata <- dplyr::select(metadata,
 metadata
 
 write_tsv(metadata, file.path(docs_dir, "geo_formatted_metadata.txt"))
-
-# get md5 checksums
-
-md5s <- dir(file.path(data_dir, "raw_data", "checksums"),
-            full.names = T)
-md5s <- map(md5s, 
-            ~read.table(.x, 
-                        col.names = c("md5", "fastq"),
-                        stringsAsFactors = F))
-
-md5s <- bind_rows(md5s)
-
-md5s <- mutate(md5s, fastq = basename(fastq),
-               file_type = "fastq",
-               instrument = ifelse(str_detect(fastq, 
-                                              "^B"),
-                                              "Illumina 2500",
-                                              "Illumina 4000"),
-               length = ifelse(str_detect(fastq, 
-                                              "^B"),
-                                              "126",
-                                              "0"),
-               library = "paired-end")
-
-md5s <- dplyr::select(md5s, 
-                      fastq, file_type, 
-                      md5, instrument, length, library) %>% 
-  dplyr::arrange(desc(fastq))
-
-all(md5s$fastq %in% c(metadata$r1, metadata$r2))
-
-md5s
-
-write_tsv(md5s, file.path(docs_dir, "geo_formatted_checksums.txt"))
 ```
 
 
@@ -737,7 +393,8 @@ p <- ggplot(stats, aes(type, percent)) +
        x = "")
 
 save_plot("mrna/percent_exonic_intronic.pdf", p, base_aspect_ratio = c(1.4, 1))
-
+file.copy("mrna/percent_exonic_intronic.pdf",
+          sfigs_dir[1], overwrite = T)
 stats %>% 
   group_by(annotation, type) %>% 
   summarize(mean_percent = mean(percent),

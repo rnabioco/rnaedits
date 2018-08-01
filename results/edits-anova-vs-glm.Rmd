@@ -10,13 +10,6 @@ output:
     fig_caption: yes
     fig_retina: 1 
     code_folding: hide
-params:
-  allele_counts: "/Users/kriemo/Projects/Martin/data/vcf/variant_allele_counts_by_strand/A_G_alleles/counts/"
-  variant_info: "/Users/kriemo/Projects/Martin/data/vcf/variant_allele_counts_by_strand/A_G_alleles/filtered_select_variants.bed.gz"
-  ref: "A"
-  alt: "G"
-  prefix: "edits"
-  dirname: "A_G_alleles"
 ---
 
 ```{r setup, include=FALSE}
@@ -44,36 +37,22 @@ library(cowplot)
 ### Differential editing analysis
 
 ```{r general_vars}
+source("globals.R")
 
-#colors mapping to state
-state_cols <-  c(
-  SA = rgb(255, 0, 0, maxColorValue=255),
-  IBA = rgb(67, 205, 128, maxColorValue=255),
-  Ent = rgb(155, 48, 255, maxColorValue=255),
-  LT = rgb(25, 25, 112, maxColorValue=255),
-  Ar = rgb(0, 0, 255, maxColorValue=255),
-  SpD = rgb(255, 165, 0, maxColorValue=255) 
-)
-# preferred order
-state_order = c(
-  "SA", "IBA", "Ent", "LT", "Ar", "SpD"
-)
+allele_counts_path <- file.path(data_dir,
+                                "vcf",
+                                "variant_allele_counts_by_strand",
+                                "A_G_alleles", 
+                                "counts")
 
-#colors for region
-region_cols <- c(
-  Medulla = "#4DAF4A",
-  Hypothalamus = "#377EB8",
-  Forebrain =  "#E41A1C",
-  Cerebrum = "#E41A1C"
-)
-# region order
-region_order <- c("Medulla", "Hypothalamus", "Forebrain")
-
-allele_counts_path <- params$allele_counts
-ref <- params$ref
-alt <- params$alt
-variant_info <- params$variant_info
-outname <- params$dirname
+variant_info <- file.path(data_dir, 
+                          "vcf", 
+                          "variant_allele_counts_by_strand",
+                          "A_G_alleles/filtered_select_variants.bed.gz")
+ref <-  "A"
+alt <- "G"
+prefix <- "edits"
+outname <- "A_G_alleles"
 ```
 
 ```{r io_util_functions}
@@ -112,18 +91,9 @@ write_gztsv <- function(df, name, ...){
 ```{r load_in_data}
 ref_comp <- bp_comp(ref)
 alt_comp <- bp_comp(alt)
-# for some unknown reason this previous definition is not recognized when running on tesla. 
-
-allele_counts_path <- params$allele_counts
-prefix <- params$prefix
-outname <- params$dirname
-message(prefix)
-message(allele_counts_path)
-message(params$allele_counts)
-message(params$dirname)
 
 regions = c("medulla", "hypothalamus", "brainrest")
-dat <- map(regions, ~group_dat(paste0(allele_counts_path, .x), ".gz"))
+dat <- map(regions, ~group_dat(file.path(allele_counts_path, .x), ".gz"))
 names(dat) <- regions
 
 bind_cols <- c('#chrom', "pos", "ref", "base")
@@ -256,7 +226,9 @@ knitr::kable(data_frame(original_sites = length(all_prop$edit_site),
 
 
 ```{r}
-get_groups <- function(matrix_dat, regex_for_fastq, ref_nt, alt_nt, pdata_file = "~/Projects/Martin/docs/BrainRegionRNAseqLibMetadata.txt") {
+get_groups <- function(matrix_dat, regex_for_fastq, ref_nt, alt_nt, 
+                       pdata_file = file.path(docs_dir,
+                                              "BrainRegionRNAseqLibMetadata.txt")) {
  # make_groups
   g_names <- colnames(matrix_dat)
   animal_number <- str_extract(g_names, regex_for_fastq)
@@ -283,10 +255,10 @@ regexes <- paste0(c("M", "H", "B"), "[0-9]+")
 pdata_groups <- map2(matrix_dat, regexes, ~get_groups(.x, .y, ref, alt))
 pdata_groups_original <- pdata_groups 
 
-.dir <- "../../../data/featurecounts/"
+.dir <- file.path(data_dir, "featurecounts")
 pattern <- "_summary.tsv.summary$"
 
-lib_sizes <- read_tsv(paste0(.dir, "count_summary.tsv.summary"))
+lib_sizes <- read_tsv(file.path(.dir, "count_summary.tsv.summary"))
 lib_sizes <- filter(lib_sizes, Status == "Assigned") %>% 
   gather(library, counts, -Status) %>% 
   mutate(library = basename(library) %>% 
@@ -341,7 +313,8 @@ Use only sites filtered as above.
 
 ```{r get_pdata}
 
-get_groups <- function(fastq_id, regex_for_fastq, pdata_file = "~/Projects/Martin/docs/BrainRegionRNAseqLibMetadata.txt") {
+get_groups <- function(fastq_id, regex_for_fastq, pdata_file = file.path(docs_dir,
+                                              "BrainRegionRNAseqLibMetadata.txt")) {
  # make_groups
   animal_number <- str_extract(fastq_id, regex_for_fastq)
   
@@ -556,7 +529,8 @@ pdf("edits/sig_editing_sites_clustered_just_anova.pdf",
    heatmap_legend_side = "left", row_dend_side = "left")
 dev.off()
 
-
+file.copy("edits/sig_editing_sites_clustered_just_anova.pdf",
+          sfigs_dir[6], overwrite = TRUE)
 ```
 
 ## compare ANOVA sites to edgeR sites
@@ -585,6 +559,9 @@ pdf("edits/anova_edger_overlap.pdf")
      labels = c("Sites found by edgeR", "Sites found by ANOVA" ),
      counts = list(cex = 1.5, col = "black"), cex = 1.5)
 dev.off()
+
+file.copy("edits/anova_edger_overlap.pdf",
+          sfigs_dir[6], overwrite = TRUE)
 ```
 
 ```{r}

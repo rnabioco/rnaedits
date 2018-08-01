@@ -1,7 +1,7 @@
 ---
 title: "RNA editing site visualizations"
 author: "Kent Riemondy RBI"
-date: "8/28/2017"
+date: "`r Sys.Date()`"
 ---
 
 ```{r setup, include=FALSE}
@@ -118,6 +118,10 @@ p <- ggplot(elbow_dat, aes(k, WSS)) +
        title = "GATK Sites")
 
 save_plot("edits/wss_plot.pdf", p)
+file.copy("edits/wss_plot.pdf", 
+          file.path(sfigs_dir[4],
+                    "wss_plot_edits.pdf"),
+                    overwrite = F)
 ```
 
 
@@ -509,7 +513,7 @@ draw(ha2 + ht1 + ht2, annotation_legend_side = "left", gap = unit(1, "mm"),
      padding = unit(c(4, 8, 4, 4), "mm"))
 dev.off()
 
-#fig 2b
+#fig 2c
 file.copy("edits/kmeans2_rotated_heatmap_with_dendo.pdf", 
           figs_dir[2], overwrite = T)
 ```
@@ -584,9 +588,6 @@ pdf("edits/heatmap_for_validation_sites.pdf")
 draw(ht, annotation_legend_side = "top", heatmap_legend_side = "left")
 dev.off()
 
-#fig 3b
-file.copy("edits/heatmap_for_validation_sites.pdf",
-          figs_dir[3], overwrite = T)
 ```
 
 ### subset of editing sites
@@ -676,7 +677,8 @@ draw(ht,
 pdf("edits/heatmap_subset_of_impactful_sites.pdf")
 draw(ht, annotation_legend_side = "top", heatmap_legend_side = "left")
 dev.off()
-   
+
+file.copy("edits/heatmap_subset_of_impactful_sites.pdf", sfigs_dir[12], overwrite = T)
 ```
 
 
@@ -849,8 +851,6 @@ ggplot(index_data, aes(State, editing_index)) +
 
 ggsave("edits/editing_index_across_states_by_cluster.pdf", width = 4, height = 3.5)
 
-#fig 2c
-file.copy("edits/editing_index_across_states_by_cluster.pdf", figs_dir[2], overwrite = T)
 
 index_data <- group_by(count_data, State, region) %>% 
   summarize(editing_index = sum(G) / (sum(A) + sum(G))) %>% 
@@ -871,7 +871,6 @@ ggplot(index_data, aes(State, editing_index, group = region)) +
         legend.key = element_rect(colour = "white"))
 
 ggsave("edits/editing_index_across_states_all_clusters.pdf", width = 4, height = 3.5)
-file.copy("edits/editing_index_across_states_all_clusters.pdf", figs_dir[2], overwrite = T)
 ```
 
 
@@ -1178,10 +1177,12 @@ p
 
 ## Heatmap of conserved (found in mouse or human) sites
 
-```{r, conserved_sites, fig.width = 6, fig.height = 8}
-
+```{r, conserved_sites, fig.width = 6, fig.height = 8, eval = F}
+# editing frequencies
 mouse_sig <- read_tsv("edits/shared_mouse_sig_edits.txt")
 human_sig <- read_tsv("edits/shared_human_sig_edits.txt")
+
+
 
 # might be useful to write these out to a table also with FDR values
 
@@ -1393,6 +1394,8 @@ walk2(all_sig_sites_matrix, names(all_sig_sites_matrix),
         pdf(paste0("edits/", y, "_heatmap.pdf"))
         plot_nonag(x, pdata, y)
         dev.off()
+        file.copy(paste0("edits/", y, "_heatmap.pdf"),
+                  sfigs_dir[5])
       }
 )
 
@@ -1403,7 +1406,7 @@ map(all_sig_sites_matrix,
 ```
 
 
-```{r, eval = F}
+```{r}
 annots <- read_tsv(file.path("edits", "variant_allele_counts_by_strand", 
                              "A_G_alleles", "A_G_filtered_sites_annotation.txt.gz"))
 
