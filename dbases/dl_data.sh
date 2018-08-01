@@ -20,3 +20,7 @@ wget -P $ens ftp://ftp.ensembl.org/pub/release-85/fasta/ictidomys_tridecemlineat
 # index fasta
 gunzip $ens"/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa.gz"
 samtools faidx $ens"/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa"
+cut -f 1,2 $ens"/Ictidomys_tridecemlineatus.spetri2.dna.toplevel.fa.fai" > $ens"/chrom_sizes.txt"
+
+# repeat-masker
+wget -O $ens"/ensembl85_rmsk.txt.gz" "http://hgdownload.soe.ucsc.edu/goldenPath/speTri2/database/rmsk.txt.gz"
