@@ -1,0 +1,188 @@
+""" Snakefile to produce figures """
+import os
+RESULTS = "../"
+
+# RMDS that don't depend on other RMDs
+INDEP_RMDS = [
+  "edits-sanger",
+  "edits-visualizations",
+  "edits-features",
+  "edits-summary",
+  "edits-hyperediting",
+  "edits-hyperediting-conservation",
+  "edits-hyperediting-structure",
+  "hyperedits-genomic_distribution",
+  "edits-anova-vs-glm",
+  "mrna-edgeR_de",
+  "mrna-qc"
+  ]
+  
+
+rule all:
+  input:
+    expand(os.path.join(RESULTS, "{rmd}.html"), 
+      rmd = INDEP_RMDS),
+   # expand(os.path.join(RESULTS, "{rmd}.html"), 
+   #  rmd = DEP_RMDS),
+
+rule hyperedits_structure:
+  input:
+    os.path.join(RESULTS, "edits-hyperediting-conservation.html"), 
+    rmd = os.path.join(RESULTS, "edits-hyperediting-structure.rmd") 
+  output:
+    os.path.join(RESULTS, "edits-hyperediting-structure.html") 
+  log:
+    "logs/edits-hyperediting-structure.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
+
+rule hyperedits_genomic:
+  input:
+    os.path.join(RESULTS, "edits-hyperediting-conservation.html"), 
+    rmd = os.path.join(RESULTS, "hyperedits-genomic_distribution.rmd") 
+  output:
+    os.path.join(RESULTS, "hyperedits-genomic_distribution.html") 
+  log:
+    "logs/edits-hyperedits-genomic_distribution.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
+    
+rule hyperedits_conservation:
+  input:
+    os.path.join(RESULTS, "edits-summary.html"),
+    os.path.join(RESULTS, "edits-hyperediting.html"), 
+    rmd = os.path.join(RESULTS, "edits-hyperediting-conservation.rmd") 
+  output:
+    os.path.join(RESULTS, "edits-hyperediting-conservation.html") 
+  log:
+    "logs/edits-hyperediting-conservation.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
+    
+rule edit_features:
+  """ 
+  render Rmarkdown 
+  """
+  input:
+    os.path.join(RESULTS, "edits-summary.html"),
+    rmd = os.path.join(RESULTS, "edits-features.rmd") 
+  output:
+    os.path.join(RESULTS, "edits-features.html") 
+  log:
+    "logs/edits-features.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
+    
+rule edit_sanger:
+  """ 
+  render Rmarkdown 
+  """
+  input:
+   rmd = os.path.join(RESULTS, "edits-sanger.rmd")
+  output:
+    os.path.join(RESULTS, "edits-sanger.html") 
+  wildcard_constraints:
+     rmd="\d+"
+  log:
+    "logs/edits-sanger.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
+    
+rule edit_visualizations:
+  """ 
+  render Rmarkdown 
+  """
+  input:
+   rmd = os.path.join(RESULTS, "edits-visualizations.rmd")
+  output:
+    os.path.join(RESULTS, "edits-visualizations.html") 
+  log:
+    "logs/edits-visualizations.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
+    
+
+rule edits_hyperediting:
+  """ 
+  render Rmarkdown 
+  """
+  input:
+   os.path.join(RESULTS, "mrna-edgeR_de.html"),
+   rmd = os.path.join(RESULTS, "edits-hyperediting.rmd"),
+  output:
+    os.path.join(RESULTS, "edits-hyperediting.html") 
+  log:
+    "logs/edits-hyperediting.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
+    
+rule mrna_de:
+  """ 
+  render Rmarkdown 
+  """
+  input:
+   rmd = os.path.join(RESULTS, "mrna-edgeR_de.rmd")
+  output:
+    os.path.join(RESULTS, "mrna-edgeR_de.html") 
+  log:
+    "logs/mrna-edgeR_de.txt",
+  shell:
+    """
+     R -e "rmarkdown::render('{input.rmd}')"
+     """
+    
+rule mrna_qc:
+  """ 
+  render Rmarkdown 
+  """
+  input:
+   rmd = os.path.join(RESULTS, "mrna-qc.rmd")
+  output:
+    os.path.join(RESULTS, "mrna-qc.html") 
+  log:
+    "logs/mrna-qc.txt",
+  shell:
+    """
+     R -e "rmarkdown::render('{input.rmd}')"
+     """
+     
+rule edits_anova:
+  input:
+    os.path.join(RESULTS, "edits-visualizations.html"),
+    rmd = os.path.join(RESULTS, "edits-anova-vs-glm.rmd") 
+  output:
+    os.path.join(RESULTS, "edits-anova-vs-glm.html") 
+  log:
+    "logs/edits-anova-vs-glm.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
+
+rule edits_summary:
+  input:
+    os.path.join(RESULTS, "edits-visualizations.html"),
+    os.path.join(RESULTS, "edits-hyperediting.html"),
+    rmd = os.path.join(RESULTS, "edits-summary.rmd") 
+  output:
+    os.path.join(RESULTS, "edits-summary.html") 
+  log:
+    "logs/edits-summary.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
