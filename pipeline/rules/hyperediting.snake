@@ -20,6 +20,54 @@ def get_mated_bam(wildcards):
 EDITS = "{data}/hyperedits/bed/edits/"
 READS = "{data}/hyperedits/bed/reads/"
 
+
+rule annotate_hypersites:
+  """
+  add annotations to sites
+  """
+  input:
+    gatk_vcf = "{data}/vcf/variant_allele_counts_by_strand/annotated_variants.vcf.gz"
+    hyper_vcf = "{data}/hyperedits/hyperedited_sites.vcf",
+    hyper_bed = "{data}/hyperedits/hyperedited_sites.bed",
+  output:
+    "{data}/hyperedits/hyperedited_sites_annotated.bed.gz"
+  params:
+    hedit_dir = "{data}/hyperedits/",
+    job_name = "annotate_alleles",
+    memory = "select[mem>16] rusage[mem=16]",
+  log: "{data}/hyperedits/logs/annotate_bed.txt"
+  message:
+    "annotate_variants"
+  threads:
+    1
+  resources: all_threads=1
+  shell:
+    """
+    zgrep "^##" {input.gatk_vcf} \
+        | cat - {input.hyper_vcf} \
+        | bgzip -c > {params.hedit_dir}"out.vcf.gz"
+    
+    bcftools annotate -a {DBASES}/denovo_annotation/gtf_transcripts.bed.gz \
+        -c CHROM,FROM,TO,-,-,-,DENOVO_GENE_ID,BIOTYPE,TRANSCRIPT_ID,GENE_ID,GENE_NAME,DENOVO_TRANSCRIPT_ID,EXON_NUMBER,REGION,ANNOTATED \
+        -h {DBASES}/denovo_annotation/header_lines.txt \
+        -i 'FILTER == "PASS"' -O z -o {params.hedit_dir}"tmp.vcf.gz" {params.hedit_dir}"out.vcf.gz"
+    
+    java -Xmx4g -jar {SNPEFF}/snpEff.jar ann \
+        -interval {input.hyper_bed} \
+        -no-downstream \
+        -no-upstream \
+        spetri2.86 \
+        {params.hedit_dir}"tmp.vcf.gz" > {params.hedit_dir}"snpeff.vcf"
+    
+    python3 {LIB}/get_vcf_as_bed.py \
+        -v {params.hedit_dir}"snpeff.vcf" \
+        -a 'GENE_ID' 'BIOTYPE' 'TRANSCRIPT_ID' 'GENE_NAME' 'DENOVO_GENE_ID' 'DENOVO_TRANSCRIPT_ID' 'EXON_NUMBER' 'ANNOTATED' \
+              | gzip > {output}
+    
+    rm {params.hedit_dir}"tmp.vcf.gz"
+    rm {params.hedit_dir}"out.vcf.gz"
+    """
+
 rule count_alleles_hyperediting:
   """
   count alleles for each hyperedited site

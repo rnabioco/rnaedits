@@ -4,7 +4,10 @@ PICARD:
   "~/src/picard/picard.jar"
 
 GATK:
-  "/vol1/software/modules-sw/GATK/3.5/GenomeAnalysisTK.jar"
+  "/cluster/software/modules-sw/GATK/3.8/GenomeAnalysisTK.jar"
+
+SNPEFF:
+  "/beevol/home/riemondy/bin/snpEff"
 
 DATA: 
   "../data"

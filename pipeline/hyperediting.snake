@@ -1,0 +1,70 @@
+shell.executable("/bin/bash")
+shell.prefix("source ~/.bash_profile; ")
+import os
+""" Snakemake pipeline for RNA editing detection from RNA-Seq data """
+
+configfile: "config.yaml"
+  
+DATA = config["DATA"]
+
+LIB = "../src"
+DBASES = "../dbases"
+RESULTS = "../results"
+DOCS = "../docs"
+
+TRANSCRIPTS = config["TRANSCRIPTS"]
+GENOME = config["GENOME"]
+GENOME_DIR = config["GENOME_DIR"]
+ANNOTATION_DIR = config["ANNOTATION_DIR"]
+FASTQ = config["FASTQ"]
+CHROM_SIZES = config["CHROM_SIZES"]
+POS_REF = config["pos_ref"]
+POS_ALT = config["pos_alt"]
+FQ_BASENAME = [os.path.basename(x) for x in FASTQ]
+
+def comp(x):
+
+  bp_dict = {"A":"T",
+             "T":"A",
+             "G":"C",
+             "C":"G"}
+
+  return bp_dict[x]
+
+C_POS = [comp(x) for x in POS_REF]
+C_ALT = [comp(x) for x in POS_ALT]
+
+rule all:
+  input:
+    #### find hyperedited regions ####
+    expand("{data}/star/{fastq}_2pass_Unmapped.out.mate{read}.fastq.gz",data = DATA,
+      fastq = FASTQ, read = ["1", "2"]),
+    expand("{data}/hyperedits/{fastq}_2pass_Unmapped.out.mate{read}_filtered.fastq.gz",
+      data = DATA, fastq=FASTQ, read = ["1", "2"]),
+    
+    #expand(expand("{{data}}/hyperedits/{{fastq}}_2pass_Unmapped.out.mate{{read}}_filtered_{ref}to{alt}.fastq.gz",
+      #zip, ref = POS_REF, alt = POS_ALT),
+      #data = DATA, fastq=FASTQ, read = ["1", "2"]),
+
+    expand(DBASES + "/hyperediting/ensemb85_genome_{ref}to{alt}.fasta.bwt", zip,
+    ref = POS_REF, alt = POS_ALT), 
+    
+    #expand(expand("{{data}}/hyperedits/{{fastq}}_{{read}}_{ref}to{alt}_gnome{c_ref}to{c_alt}.bam",
+      #zip, ref = POS_REF*2, alt = POS_ALT*2, c_ref = C_POS + POS_REF, c_alt= C_ALT + POS_ALT), 
+      #data = DATA, fastq=FASTQ, read = ["1", "2"]), 
+    
+    #expand(expand("{{data}}/hyperedits/bed/{{type}}/{ref}_to_{alt}/{{fastq}}_{{read}}_{f_ref}to{f_alt}_gnome{c_ref}to{c_alt}.bed",
+      #zip, ref = POS_REF*4, alt = POS_ALT*4, f_ref = POS_REF*2 + C_POS*2, f_alt = POS_ALT*2 + C_ALT*2, c_ref = (C_POS + POS_REF)*2, c_alt= (C_ALT + POS_ALT)*2), 
+      #data = DATA, fastq=FASTQ, type = ["edits", "reads"], read = ["1", "2"]),
+    
+    #expand(expand("{{data}}/hyperedits/bed/{{type}}/filtered/{ref}_to_{alt}/{{fastq}}_{{read}}_{f_ref}to{f_alt}_gnome{c_ref}to{c_alt}.bed",
+      #zip, ref = POS_REF*4, alt = POS_ALT*4, f_ref = POS_REF*2 + C_POS*2, f_alt = POS_ALT*2 + C_ALT*2, c_ref = (C_POS + POS_REF)*2, c_alt= (C_ALT + POS_ALT)*2), 
+      #data = DATA, fastq=FASTQ, type = ["edits", "reads"], read = ["1", "2"]),
+     
+    expand("{data}/hyperedits/site_counts/A_G_counts/{fastq}_counts.txt.gz",
+      data = DATA, fastq=FASTQ),
+    
+    expand("{data}/hyperedits/hyperedited_sites_annotated.bed.gz",
+      data = DATA)
+
+include: "rules/hyperediting.snake"

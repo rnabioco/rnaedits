@@ -15,7 +15,9 @@ rule filter_recalibrated_variants_DP:
   resources: all_threads = 1 
   shell:
     """
-      java -Xmx36g -jar {GATK} \
+      java -Xmx16g \
+        -XX:+UseSerialGC \
+        -jar {GATK} \
         -T VariantFiltration \
         -R {GENOME} \
         -V {input} \
@@ -39,7 +41,9 @@ rule get_only_snps:
   resources: all_threads = 1 
   shell:
     """
-      java -Xmx36g -jar {GATK} \
+      java -Xmx16g \
+        -XX:+UseSerialGC \
+        -jar {GATK} \
         -T SelectVariants \
         -R {GENOME} \
         -V {input} \
@@ -68,7 +72,9 @@ rule merge_calibrated_vcfs_round_2:
         do echo $vcf >> {params.vcf_list}
       done
 
-      java -Xmx64g -jar {GATK} \
+      java -Xmx16g \
+        -XX:+UseSerialGC \
+        -jar {GATK} \
         -T CombineVariants \
         -R {GENOME} \
         -V {params.vcf_list} \
@@ -92,14 +98,14 @@ rule filter_secondpass_recalibrated_variants:
   resources: all_threads = 1 
   shell:
     """
-    module load vcflib
-    module load samtools/1.3
+    module load samtools
+    module load htslib
+    tabix -f -p vcf {input}
+    
     vcffilter -f "FS < 30.0 & QD > 2.0" \
     {input} > {params.tmp}
     bgzip {params.tmp}
     tabix -p vcf {output}
-    rm {params.tmp}
-    module unload vcflib
     """
 
 rule generate_third_round_vcfs:
@@ -120,7 +126,7 @@ rule generate_third_round_vcfs:
     4
   shell:
     """
-      java -Xmx40g -XX:ParallelGCThreads=2 \
+      java -Xmx12g -XX:+UseSerialGC \
         -jar {GATK} \
         -T HaplotypeCaller \
         -nct {threads} \
@@ -129,7 +135,6 @@ rule generate_third_round_vcfs:
         -BQSR {input.bqsr} \
         -dontUseSoftClippedBases \
         -stand_call_conf 20.0 \
-        -stand_emit_conf 20.0 \
         -o {output}
     """
 
@@ -152,7 +157,9 @@ rule base_recalibration_round_two:
     4
   shell:
     """
-      java -Xmx36g -jar {GATK} \
+      java -Xmx16g \
+        -XX:+UseSerialGC \
+        -jar {GATK} \
         -T BaseRecalibrator \
         -nct {threads}  \
         -R {GENOME} \
@@ -182,7 +189,9 @@ rule merge_calibrated_vcfs_round_1:
         do echo $vcf >> {params.vcf_list}
       done
 
-      java -Xmx64g -jar {GATK} \
+      java -Xmx16g \
+        -XX:+UseSerialGC \
+        -jar {GATK} \
         -T CombineVariants \
         -R {GENOME} \
         -V {params.vcf_list} \
@@ -206,14 +215,14 @@ rule filter_firstpass_recalibrated_variants:
   resources: all_threads = 1 
   shell:
     """
-    module load vcflib
-    module load samtools/1.3
+    module load samtools
+    module load htslib
+    tabix -f -p vcf {input}
+    
     vcffilter -f "FS < 30.0 & QD > 2.0" \
     {input} > {params.tmp}
     bgzip {params.tmp}
     tabix -p vcf {output}
-    rm {params.tmp}
-    module unload vcflib
     """
 
 rule generate_second_round_vcfs:
@@ -234,7 +243,7 @@ rule generate_second_round_vcfs:
     4
   shell:
     """
-      java -Xmx40g -XX:ParallelGCThreads=2 \
+      java -Xmx12g -XX:+UseSerialGC \
         -jar {GATK} \
         -T HaplotypeCaller \
         -nct {threads} \
@@ -243,7 +252,6 @@ rule generate_second_round_vcfs:
         -BQSR {input.bqsr} \
         -dontUseSoftClippedBases \
         -stand_call_conf 20.0 \
-        -stand_emit_conf 20.0 \
         -o {output}
     """
 
@@ -266,7 +274,9 @@ rule base_recalibration_round_one:
     4
   shell:
     """
-      java -Xmx36g -jar {GATK} \
+      java -Xmx16g \
+        -XX:+UseSerialGC \
+        -jar {GATK} \
         -T BaseRecalibrator \
         -nct {threads}  \
         -R {GENOME} \
@@ -297,7 +307,9 @@ rule merge_uncalibrated_vcfs:
         do echo $vcf >> {params.vcf_list}
       done
 
-      java -Xmx64g -jar {GATK} \
+      java -Xmx16g \
+        -XX:+UseSerialGC \
+        -jar {GATK} \
         -T CombineVariants \
         -R {GENOME} \
         -V {params.vcf_list} \
@@ -321,52 +333,15 @@ rule filter_uncalibrated_variants:
   resources: all_threads = 1 
   shell:
     """
-    module load vcflib
-    module load samtools/1.3 # tabix and bgzip not in samtools/1.5 dir
+    module load samtools # tabix and bgzip not in samtools/1.5 dir
+    module load htslib
+    tabix -f -p vcf {input}
+
     vcffilter -f "FS < 30.0 & QD > 2.0" \
     {input} > {params.tmp}
     bgzip {params.tmp}
     tabix -p vcf {output}
-    rm {params.tmp}
-    module unload vcflib
-    module unload samtools/1.3
     """
-
-# using GATK queue scatter-gather
-#rule generate_uncalibrated_snp_db:
-#  input:
-#    "{data}/star/{fastq}_split.bam"
-#  output:
-#    "{data}/vcf/uncalibrated/{fastq}_firstbootstrap.vcf"
-#  params:
-#    job_name = "{fastq}.bootstrap",
-#    memory = "select[mem>40] rusage[mem=40]",
-#  log:
-#    "{data}/vcf/uncalibrated/logs/{fastq}_firstbootstrap.txt"
-#  message:
-#    "first pass bootstrap vcf calls  "
-#  threads:
-#    2
-#  shell:
-#    """
-#      java -Xmx32g \
-#        -jar {QUEUE} \
-#        -jobQueue rna \
-#        -bsub \
-#        -S rules/HaplotypeCaller.scala \
-#        -O {output} \
-#        -runName  {params.job_name} \
-#        -logDir {log} \
-#        -nct 4 \
-#        -nsc 10 \
-#        -mem 4 \
-#        -R {GENOME} \
-#        -I {input} \
-#        -stand_call_conf 20 \
-#        -stand_emit_conf 20 \
-#        -run
-#    """
-
 
 rule generate_uncalibrated_snp_db:
   input:
@@ -385,7 +360,7 @@ rule generate_uncalibrated_snp_db:
     4 
   shell:
     """
-      java -Xmx32g -XX:ParallelGCThreads=2 \
+      java -Xmx12g -XX:+UseSerialGC \
         -jar {GATK} \
         -T HaplotypeCaller \
         -nct {threads} \
@@ -393,6 +368,5 @@ rule generate_uncalibrated_snp_db:
         -I {input} \
         -dontUseSoftClippedBases \
         -stand_call_conf 20.0 \
-        -stand_emit_conf 20.0 \
         -o {output}
     """

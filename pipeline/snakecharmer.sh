@@ -3,7 +3,6 @@
 #BSUB -o logs/snakemake_%J.out
 #BSUB -e logs/snakemake_%J.err
 #BSUB -R "select[mem>4] rusage[mem=4] " 
-#BSUB -q normal
 
 set -o nounset -o pipefail -o errexit -x
 
@@ -12,9 +11,9 @@ args=' -q rna -o {log}.out -e {log}.err -J {params.job_name} -R "
 
 snakemake --drmaa "$args" \
     --snakefile Snakefile \
-    --jobs 75 \
-    --resources all_threads=75 \
+    --jobs 72 \
+    --resources all_threads=72 \
     --latency-wait 50 \
     --rerun-incomplete \
-    --configfile config_denovo.yaml 
+    --configfile config.yaml 
   

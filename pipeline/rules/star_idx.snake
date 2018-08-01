@@ -17,7 +17,7 @@ rule star_idx:
     24
   shell:
     """
-    module load star
+    module load STAR/2.5.2a
     STAR --runMode genomeGenerate \
       --genomeDir {GENOME_DIR}  \
       --genomeFastaFiles {GENOME} \
@@ -25,7 +25,7 @@ rule star_idx:
       --sjdbGTFfile {TRANSCRIPTS} \
       --sjdbOverhang 125 \
       --limitGenomeGenerateRAM 60000000000
-    module unload star
+    module unload STAR/2.5.2a
     """
 
 

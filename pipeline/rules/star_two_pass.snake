@@ -39,7 +39,7 @@ rule star_second_pass:
    resources: all_threads=12
    shell:
      """
-     module load star
+     module load STAR 
      STAR \
        --genomeDir {GENOME_DIR}  \
        --runThreadN {threads} \
@@ -55,7 +55,6 @@ rule star_second_pass:
      gzip -f -S .fastq.gz {params.out}Unmapped.out.mate1 
      gzip -f -S .fastq.gz {params.out}Unmapped.out.mate2 
 
-     module unload star
      """
 
 rule star_first_pass:
@@ -81,7 +80,7 @@ rule star_first_pass:
    
    shell:
      """
-     module load star
+     module load STAR
      STAR \
        --genomeDir {GENOME_DIR}  \
        --runThreadN {threads} \
@@ -89,5 +88,4 @@ rule star_first_pass:
        --outSAMtype BAM SortedByCoordinate \
        --readFilesCommand gunzip -c \
        --outFileNamePrefix {params.out}
-     module unload star
      """

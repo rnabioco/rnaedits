@@ -3,8 +3,6 @@
 """ call variant based on strandedness """
 """ generate variants called for all types of sequence variants """ 
 
-SNPEFF = "/vol3/home/riemondy/bin/snpEff"
-
 def _get_comp(n):
   base_dict = {"A":"T", "T":"A", "G":"C", "C":"G"}
   return base_dict[n] 
@@ -41,33 +39,6 @@ rule pileup_count_stranded_variants_trimmed:
     variants = "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles/filtered_select_variants.vcf.gz",
     bam = "{data}/star/{fastq}_split.bam"
   output:
-    "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles_trimmed/counts/{fastq}_counts.txt.gz"
-  params:
-    job_name = "count_alleles",
-    memory = "select[mem>4] rusage[mem=4]",
-  log:
-    "{data}/vcf/variant_allele_counts_by_strand/hexamer_trimmed/logs/{pos_ref}_{pos_alt}_counts/{fastq}_recount_alleles.txt"
-  message:
-    "recount allele depth with pysam"
-  threads:
-    5
-  resources: all_threads=5
-  shell:
-    """
-    python3 {LIB}/get_pileup.py \
-      -t {threads} \
-      -b {input.bam} \
-      -v {input.variants} \
-      -q 20 \
-      -p 6 \
-     | gzip > {output}
-    """
-
-rule pileup_count_stranded_variants:
-  input:
-    variants = "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles/filtered_select_variants.vcf.gz",
-    bam = "{data}/star/{fastq}_split.bam"
-  output:
     "{data}/vcf/variant_allele_counts_by_strand/{pos_ref}_{pos_alt}_alleles/counts/{fastq}_counts.txt.gz"
   params:
     job_name = "count_alleles",
@@ -86,9 +57,9 @@ rule pileup_count_stranded_variants:
       -b {input.bam} \
       -v {input.variants} \
       -q 20 \
+      -p 6 \
      | gzip > {output}
     """
-
 
 rule filter_ambiguous_strandedness_all_variants:
   input:
@@ -140,7 +111,7 @@ rule snpEff_filter_strandedness_variants:
   resources: all_threads=1
   shell:
     """
-    module load samtools/1.3
+    module load htslib
     zcat {input} | \
     java -Xmx4g -jar {SNPEFF}/SnpSift.jar filter \
     "(\
@@ -195,7 +166,7 @@ rule snpEff_variants_based_on_strandedness:
   resources: all_threads=12
   shell:
     """
-    module load samtools/1.3
+    module load htslib
     java -Xmx4g -jar {SNPEFF}/snpEff.jar ann \
     -interval {input.annotations} \
     -no-downstream \
@@ -312,7 +283,7 @@ rule annotate_variants_with_bed_info:
   resources: all_threads=1
   shell:
     """
-    module load samtools/1.3
+    module load htslib
     module load bcftools
     echo \
     '##INFO=<ID=DENOVO_GENE_ID,Number=1,Type=String,Description="taco gene id">
@@ -336,7 +307,6 @@ rule annotate_variants_with_bed_info:
     {input.vcf}
 
     tabix -p vcf {output}
-    module unload bcftools
     """
 
 rule extract_transcripts:
@@ -356,7 +326,7 @@ rule extract_transcripts:
     " prepare transcripts "
   shell:
     """
-    module load samtools/1.3
+    module load htslib
     
     bedtools sort -i {input} | \
     awk '{{OFS=FS="\t"}} $15=="transcript"' \
@@ -387,7 +357,7 @@ rule prepare_gtf_to_bed:
   shell:
     """
     module load python
-    module load samtools/1.3
+    module load htslib
     python {LIB}/gtf_to_bed.py -i {input} \
     -a "gene_id" "ref_gene_type" "ref_transcript_id" "ref_gene_id" "gene_name" "transcript_id", "exon_number", "annotation"  \
     -c 3 \
@@ -401,7 +371,4 @@ rule prepare_gtf_to_bed:
 
     tabix -0 -p bed {output.bed} 
     
-    module unload python
-    module unload samtools/1.3
-
     """

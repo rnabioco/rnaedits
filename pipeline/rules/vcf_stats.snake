@@ -21,7 +21,6 @@ rule stats_filtered:
     """
     module load bcftools
     bcftools stats {input} > {output}
-    module unload bcftools
     """
 
 rule stats_uncalibrated:
@@ -41,7 +40,6 @@ rule stats_uncalibrated:
     """
     module load bcftools
     bcftools stats {input} > {output}
-    module unload bcftools
     """
 
 rule single_vcfs_filtered:
