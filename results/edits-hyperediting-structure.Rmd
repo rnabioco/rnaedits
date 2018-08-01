@@ -310,7 +310,7 @@ kentr::write_fasta(rv_seqs, "hyperedits/folding/bp2000_shuf_revcomp.fasta")
 ```
 
 ## run blastn
-```{bash, eval = F}
+```{bash}
 
 function run_blastn {
   rm tmp1.txt tmp2.txt $3 blastout.log.txt
@@ -543,7 +543,8 @@ ggplot(blast_dat, aes(description, percent_dsRNA)) +
   )
   
 ggsave("hyperedits/blastn_calc.pdf", width = 4, height = 6)
-
+file.copy("hyperedits/blastn_calc.pdf",
+          figs_dir[3], overwrite = T)
 blast_dat
 ```
 

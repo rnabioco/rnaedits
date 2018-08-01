@@ -10,18 +10,63 @@ RMDS = [
   "edits-hyperediting",
   "edits-hyperediting-conservation",
   "edits-hyperediting-structure",
+  "edits-warm-spring-winter",
+  "edits-tissue-comparison"
+  "edits-stability",
+  "edits-geo",
   "hyperedits-genomic_distribution",
   "edits-anova-vs-glm",
   "mrna-edgeR_de",
   "mrna-qc"
   ]
   
-
 rule all:
   input:
     expand(os.path.join(RESULTS, "{rmd}.html"), 
       rmd = RMDS),
+    os.path.join(RESULTS, "notebook", "_site", "index.html")
+      
+rule build_site:
+  input: 
+    expand(os.path.join(RESULTS, "{rmd}.html"), 
+      rmd = RMDS),
+    rmd = os.path.join(RESULTS, "notebook", "index.rmd")
+  output: 
+    os.path.join(RESULTS, "notebook", "_site", "index.html")
+  log:
+    "logs/edits-tissue-comparison.txt",
+  shell:
+    """
+    R -e "rmarkdown::render_site('{input.rmd}')"
+    """
+    
+rule tissue_comp:
+  input:
+    os.path.join(RESULTS, "edits-geo.html"), 
+    rmd = os.path.join(RESULTS, "edits-tissue-comparison.rmd") 
+  output:
+    os.path.join(RESULTS, "edits-tissue-comparison.html") 
+  log:
+    "logs/edits-tissue-comparison.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
+edits-tissue-comparison
 
+rule geo:
+  input:
+    os.path.join(RESULTS, "edits-hyperediting-structure.html"), 
+    rmd = os.path.join(RESULTS, "edits-geo.rmd") 
+  output:
+    os.path.join(RESULTS, "edits-geo.html") 
+  log:
+    "logs/edits-geo.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
+    
 rule hyperedits_structure:
   input:
     os.path.join(RESULTS, "edits-hyperediting-conservation.html"), 
@@ -37,7 +82,7 @@ rule hyperedits_structure:
 
 rule hyperedits_genomic:
   input:
-    os.path.join(RESULTS, "edits-hyperediting-conservation.html"), 
+    os.path.join(RESULTS, "edits-warm-spring-winter.html"), 
     rmd = os.path.join(RESULTS, "hyperedits-genomic_distribution.rmd") 
   output:
     os.path.join(RESULTS, "hyperedits-genomic_distribution.html") 
@@ -57,6 +102,32 @@ rule hyperedits_conservation:
     os.path.join(RESULTS, "edits-hyperediting-conservation.html") 
   log:
     "logs/edits-hyperediting-conservation.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
+    
+rule edits_stability:
+  input:
+    os.path.join(RESULTS, "edits-hyperediting-conservation.html"),
+    rmd = os.path.join(RESULTS, "edits-stability.rmd") 
+  output:
+    os.path.join(RESULTS, "edits-stability.html") 
+  log:
+    "logs/edits-stability.txt",
+  shell:
+    """
+    R -e "rmarkdown::render('{input.rmd}')"
+    """
+    
+rule edits_warm_spring_winter:
+  input:
+    os.path.join(RESULTS, "edits-hyperediting-conservation.html"),
+    rmd = os.path.join(RESULTS, "edits-warm-spring-winter.rmd") 
+  output:
+    os.path.join(RESULTS, "edits-warm-spring-winter.html") 
+  log:
+    "logs/edits-warm-spring-winter.txt",
   shell:
     """
     R -e "rmarkdown::render('{input.rmd}')"

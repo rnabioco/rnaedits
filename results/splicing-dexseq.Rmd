@@ -1,0 +1,134 @@
+---
+title: "Diffrential Splicing with DEXSeq"
+author: "Kent Riemondy RBI"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_collapsed: false
+    fig_caption: yes
+    code_folding: hide
+params:
+  region: "hypo"
+  counts_file: "../../data/featurecounts/dexseq/count_summary.tsv" 
+  metadata: "../../docs/BrainRegionRNAseqLibMetadata.txt"
+  threads: 12
+  gtf:  "../../dbases/ensembl85/flat_exons_for_featurecounts.gtf"
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = FALSE)
+```
+
+```{r ,message=FALSE, warning=FALSE, echo=FALSE}
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(readr)
+library(stringr)
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(DEXSeq)
+```
+
+```{r, eval = F}
+write_gztsv <- function(df, name, ...){
+  # write output as gzipped, supply name without .gz
+  if(str_detect(name, ".gz$")){
+    uncompressed_name <- str_replace(name, ".gz$", "")
+  } else {
+    uncompressed_name <- name
+  }
+  write_tsv(df, uncompressed_name, ...)
+  system(paste0("gzip -f ", uncompressed_name))
+}
+
+counts_file <- params$counts_file
+tmp <- read_tsv(counts_file, comment = "#")
+
+
+forebrain <- dplyr::select(tmp, Geneid:Length, dplyr::contains("brainrest"))
+medulla <- dplyr::select(tmp, Geneid:Length, dplyr::contains("medulla"))
+hypo <- dplyr::select(tmp, Geneid:Length, dplyr::contains("hypothalamus"))
+
+write_gztsv(forebrain, "forebrain_fc_counts.txt")
+write_gztsv(medulla, "medulla_fc_counts.txt")
+write_gztsv(hypo, "hypo_fc_counts.txt")
+```
+
+```{r}
+brain_region <- params$region
+counts_file <- paste0(brain_region, "_fc_counts.txt.gz")
+tmp <- read_tsv(counts_file, comment = "#")
+
+
+# build up metadata
+.cols <- colnames(tmp[7:length(tmp)])
+.names <- basename(.cols)
+regex <- "[MHB][0-9]+"
+.animal_number <- str_extract(.cols, regex)
+meta_data <- data_frame(files = .cols, 
+                        samples = .names,
+                        animal_number = .animal_number)
+# add in other metadata
+pdata <- read_tsv(params$metadata)
+pdata <- gather(pdata, region, sample, Forebrain, Hypothalamus, Medulla)
+pdata <- mutate(pdata, 
+                animal_number = str_split(sample, "_", simplify = T)[, 1])
+
+meta_data <- inner_join(meta_data, pdata, by = "animal_number")
+meta_data <- as.data.frame(meta_data)
+rownames(meta_data) <- meta_data$files
+meta_data <- meta_data[, -1]
+```
+
+```{r}
+source("load_SubreadOutput.R")
+library(BiocParallel)
+BPPARAM <- MulticoreParam(workers = params$threads)
+
+dxd.fc <- DEXSeqDataSetFromFeatureCounts(counts_file,
+                                         flattenedfile = params$gtf,
+                                         sampleData = meta_data,
+                                         design = ~sample + exon + State:exon )
+
+dxd.fc <- dxd.fc[rowSums(counts(dxd.fc)) > 1e3, ]
+dxd.fc <- estimateSizeFactors(dxd.fc)
+dxd.fc <- estimateDispersions(dxd.fc, BPPARAM = BPPARAM)
+plotDispEsts(dxd.fc)
+
+dxd.fc <- testForDEU(dxd.fc, BPPARAM = BPPARAM)
+dxd.fc <- estimateExonFoldChanges(dxd.fc, fitExpToVar = "State", BPPARAM = BPPARAM)
+dxr1 <- DEXSeqResults(dxd.fc)
+table( dxr1$padj < 0.1 )
+plotMA( dxr1, cex=0.8 )
+out_res <- as.data.frame(dxr1)
+write.table(out_res, paste0(brain_region, "_dexout.txt"), quote = F, sep = "\t")
+saveRDS(dxd.fc, paste0(brain_region, "dexseq.rds"))
+```                                   
+
+
+```{r, eval = F}
+library(ComplexHeatmap)
+dat <- read.table("hypo_dexout.txt", row.names = 1, header = T, sep = "\t") %>% 
+  tibble::rownames_to_column("exonID") %>% 
+  as_data_frame()
+
+dat %>% 
+  filter(padj < 0.01) %>%  
+  dplyr::select(Ar:SpD) %>% 
+  as.matrix -> mat
+
+scaled_mat <- t(scale(t(mat)))
+scaled_mat <- na.omit(scaled_mat)
+Heatmap(scaled_mat,
+        row_title = "Exons",
+          heatmap_legend_param = list(
+            title = "Mean Centered \nLog2 Exon Usage"))
+```

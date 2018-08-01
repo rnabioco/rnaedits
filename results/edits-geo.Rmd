@@ -443,7 +443,7 @@ out_dat <- list(out_descript,
                 out_dat$`Constitutive Sites`)
 names(out_dat) <- c("Description", "Cold-Enriched Sites", "Constitutive Sites")
 
-openxlsx::write.xlsx(out_dat, "Supplemental-Table-2.xlsx")
+openxlsx::write.xlsx(out_dat, "Figures/Supplemental-Table-3.xlsx")
 ```
 
 

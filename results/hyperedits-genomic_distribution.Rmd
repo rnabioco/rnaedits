@@ -394,7 +394,7 @@ rpt_bed <- rpt_bed %>%
   group_by(site.x) %>%  
   summarize(repeat_names = valr::values_unique(name.y), 
             repeat_classes = valr::values_unique(class.y),
-            repeat_present = first(repeat_found))
+            repeat_present = dplyr::first(repeat_found))
 ```
 
 ```{r rpt_bed_annotated}
@@ -443,7 +443,8 @@ sig_plt <- ggplot(rpt_bed_annotated, aes(best_features)) +
 sig_plt
 
 save_plot("hyperedits/sig_repeat_distribution.pdf", sig_plt, base_width = 6)
-
+file.copy("hyperedits/sig_repeat_distribution.pdf",
+          figs_dir[4], overwrite = T)
 rpt_bed_annotated  %>% 
    dplyr::filter(best_features != "Total") %>% 
    group_by(repeat_present) %>% 
@@ -526,8 +527,7 @@ b <- ggplot(res, aes(repeat_names, total_repeat_classes)) +
 b
 plt <- plot_grid(a, b, rel_widths = c(1, 1.1))
 save_plot("hyperedits/sig_repeat_classification.pdf", plt, base_width = 8)
-# fig 3
-#file.copy("edits/repeat_classification.pdf", figs_dir[3], overwrite = T)
+file.copy("hyperedits/repeat_classification.pdf", figs_dir[4], overwrite = T)
 ```
 
 ## Examine non-sig distribution
@@ -634,7 +634,7 @@ rpt_bed <- rpt_bed %>%
   group_by(site.x) %>%  
   summarize(repeat_names = valr::values_unique(name.y), 
             repeat_classes = valr::values_unique(class.y),
-            repeat_present = first(repeat_found))
+            repeat_present = dplyr::first(repeat_found))
 
 #annotate with best_bed from above
 rpt_bed <- left_join(rpt_bed, best_bed)                                                                                              
@@ -680,6 +680,8 @@ p <- ggplot(rpt_bed, aes(best_features)) +
 p
 
 save_plot("hyperedits/nonsig_repeat_distribution.pdf", p, base_width = 6.25)
+file.copy("hyperedits/nonsig_repeat_distribution.pdf",
+          figs_dir[4], overwrite = T)
 ```
 
 ```{r}
@@ -759,8 +761,7 @@ b <- ggplot(res, aes(repeat_names, total_repeat_classes)) +
 b
 plt <- plot_grid(a, b, rel_widths = c(1, 1.1))
 save_plot("hyperedits/nonsig_repeat_classification.pdf", plt, base_width = 8.2)
-# fig 3
-#file.copy("edits/repeat_classification.pdf", figs_dir[3], overwrite = T)
+file.copy("hyperedits/repeat_classification.pdf", figs_dir[4], overwrite = T)
 ```
 
 
@@ -883,7 +884,7 @@ rpt_bed <- rpt_bed %>%
   group_by(site.x) %>%  
   summarize(repeat_names = valr::values_unique(name.y), 
             repeat_classes = valr::values_unique(class.y),
-            repeat_present = first(repeat_found))
+            repeat_present = dplyr::first(repeat_found))
 
 #annotate with best_bed from above
 rpt_bed <- left_join(rpt_bed, best_bed)                                                                                              

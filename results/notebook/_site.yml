@@ -14,4 +14,4 @@ output:
       collapsed: false
     df_print: paged
     code_folding: hide
-    exclude: ["*.pdf", "mrna*", "edits*", "hyperedits*", "Figures*", "*_cache", "*_files"]
+    exclude: ["*.pdf", "mrna*", "edits*", "hyperedits*", "Figures*", "*_cache", "*_files", "Snakefile", "*.sh"]

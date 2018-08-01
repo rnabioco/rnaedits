@@ -653,6 +653,8 @@ p
 
 save_plot("hyperedits/predicted_effects.pdf", p,
           base_width = 5, base_height = 3.5)
+file.copy("hyperedits/predicted_effects.pdf",
+          figs_dir[5], overwrite = T)
 
 annotated_sig_gatk <- annotation %>% 
   dplyr::filter(FDR < 0.01,

@@ -404,8 +404,8 @@ de_dat_annot %>%
   dplyr::arrange(type, .by_group = T) %>% # gatk > hyper
   summarize(logFC = max(logFC), 
             FDR = min(FDR), 
-            type = first(type), 
-            kmeans_cluster = first(kmeans_cluster)) -> grouped_dat
+            type = dplyr::first(type), 
+            kmeans_cluster = dplyr::first(kmeans_cluster)) -> grouped_dat
 
 grouped_dat <- mutate(grouped_dat, significant = ifelse(FDR < 0.01,
                                          ifelse(logFC > 0,
@@ -583,6 +583,9 @@ pdf("edits/editing_sites_with_a_seasonal_component.pdf", width = 14, height = 8)
 draw(ha2_row + ht, annotation_legend_side = "left", gap = unit(1, "mm"), 
      heatmap_legend_side = "left", row_dend_side = "left", padding = unit(c(4, 8, 4, 4), "mm"))
 dev.off()
+
+file.copy("edits/editing_sites_with_a_seasonal_component.pdf",
+          figs_dir[5], overwrite = T)
 ```
 
 
@@ -779,7 +782,7 @@ plts <- map(impactful_sites, ~plot_sites(prop_dat = long_prop_dat,
                    sites_to_plot = .x))
 plt <- plot_grid(plotlist = plts, ncol = 3)
 plt
-save_plot("impactful_variants_editing_freq.pdf", plt,base_width= 12, base_height = 24)
+save_plot("edits/impactful_variants_editing_freq.pdf", plt,base_width= 12, base_height = 24)
 ```
 
 
@@ -849,4 +852,7 @@ draw(ht, annotation_legend_side = "top", heatmap_legend_side = "left")
 pdf("edits/all_cds_impactful_sites.pdf")
 draw(ht, annotation_legend_side = "top", heatmap_legend_side = "left", padding = unit(c(4, 12, 4, 4), "mm"))
 dev.off()
+
+file.copy("edits/all_cds_impactful_sites.pdf",
+          figs_dir[5], overwrite = T)
 ```

@@ -34,7 +34,7 @@ gatk_prop <- read_tsv("edits/variant_allele_counts_by_strand/A_G_alleles/A_G_fil
 hyper_prop <- read_tsv("hyperedits/diffedits/A_G_filtered_sites_proportions.txt.gz")
 hyper_annot <-  read_tsv("edits/geo/hyperedited_sites_annotation.txt.gz")
 
-sig_sites <- readxl::read_excel("Supplemental-Table-2.xlsx", 2)
+sig_sites <- readxl::read_excel("Figures/Supplemental-Table-3.xlsx", 2)
 sig_gatk_sites <- filter(sig_sites, edit_type == "gatk") %>% pull(site) %>% unique()
 sig_hyper_sites <- filter(sig_sites, edit_type == "hyperedited") %>% pull(site) %>% unique()
 both_sites <- filter(sig_sites, edit_type == "both") %>% pull(site) %>% unique()
@@ -45,39 +45,6 @@ hyper_prop_sig <- hyper_prop_sig[, colnames(gatk_prop_sig)]
 brain_site_proportions <- bind_rows(gatk_prop_sig, hyper_prop_sig)
 ```
 
-```{r other_libs, eval = F}
-count_files <- dir(file.path(data_dir, 
-              "neonates_and_testes/vcf/variant_allele_counts_by_strand/A_G_alleles/counts"),
-    pattern = "_counts.txt.gz",
-    full.names = T)
-
-count_dat <- map(count_files, read_tsv)
-names(count_dat) <- basename(count_files)
-count_dat <- bind_rows(count_dat, 
-                       .id = "library")
-
-count_dat <- mutate(count_dat, 
-                    site = str_c(`#chrom`, pos, ref, sep = "::"))
-
-hyper_count_files <- dir(file.path(data_dir, 
-              "neonates_and_testes/hyperedits/site_counts/A_G_counts"),
-    pattern = "_counts.txt.gz",
-    full.names = T)
-
-hyper_count_dat <- map(hyper_count_files, read_tsv)
-names(hyper_count_dat) <- basename(hyper_count_files)
-hyper_count_dat <- bind_rows(hyper_count_dat, 
-                       .id = "library")
-
-hyper_count_dat <- mutate(hyper_count_dat, 
-                    site = str_c(`#chrom`, pos, ref, sep = "::"))
-
-count_dat <- bind_rows(list(gatk = count_dat, hyper = hyper_count_dat), .id = "type")
-sig_count_dat <- filter(count_dat, site %in% sig_sites$site)
-
-sig_count_dat %>% 
-  spread(type, library, `#chrom`, pos, ref, site)
-```
 
 ```{r io_util_functions}
 bp_comp <- function(nt){
@@ -110,312 +77,7 @@ write_gztsv <- function(df, name, ...){
 }
 ```
 
-### load in the data
-
-```{r load_in_data}
-allele_counts_path <- file.path(data_dir, 
-              "neonates_and_testes/vcf/variant_allele_counts_by_strand/A_G_alleles/counts")
-ref <- "A"
-alt <- "G"
-ref_comp <- bp_comp(ref)
-alt_comp <- bp_comp(alt)
-
-dat <- group_dat(allele_counts_path, ".gz")
-hyper_dat <- group_dat(file.path(data_dir,
-                                 "neonates_and_testes/hyperedits/site_counts/A_G_counts"), 
-                       ".gz")
-
-dat <- bind_rows(dat,
-                 hyper_dat) 
-
-dat <- unique(dat)
-```
-
-### clean input
-
-```{r clean_up}
-
-clean_and_filter <- function(dat, ref_nt, alt_nt, ref_comp, alt_comp){
-  # filter for certain alleles, and spread each ref and alt count into seperate columns
-  
-  dat <- mutate(dat, 
-                 edit_site = paste(`#chrom`, pos, ref, sep = "::")) %>% 
-  dplyr::select(edit_site, everything())
-  
-  ag_dat <- filter(dat,
-                   (ref == ref_nt & base == alt_nt) |
-                   (ref == ref_nt & base == ref_nt) |
-                   (ref == ref_comp & base == alt_comp) |
-                  (ref == ref_comp & base == ref_comp)) %>%
-    mutate(
-           ref = ifelse(ref == ref_comp, ref_nt, ref),
-           base = ifelse(base == ref_comp, ref_nt, 
-                         ifelse(base == alt_comp, alt_nt, base)))
-  
-  ag_dat <- group_by(ag_dat, edit_site, `#chrom`, pos, ref)
-  #make sure alternate allele is second in group
-  if (ref_nt < alt_nt){
-    ag_dat <- arrange(ag_dat, `#chrom`, pos, ref, base)
-  } else {
-    ag_dat <- arrange(ag_dat, `#chrom`, pos, ref, desc(base))
-  }
-
-  ag_dat
-}
-
-get_long_data <- function(dat, ref_nt, alt_nt, output_prefix){
-  ag_dat <- group_by(dat, edit_site, `#chrom`, pos, ref)
-  
-  ag_wide <- summarize_at(ag_dat, vars(matches(".gz")),
-               funs(a = nth(., 1),b = nth(., 2)))
-  
-  ag_wide <- ungroup(ag_wide) %>%
-      dplyr::select(-`#chrom`, -pos, -ref) %>% 
-      dplyr::select(edit_site, everything())
- 
-  ag_wide
-}
-
-get_proportion_dat <- function(dat, ref_nt, alt_nt, output_prefix){
-  ag_dat <- group_by(dat, edit_site, `#chrom`, pos, ref)
-  
-  ag_wide <- summarize_at(ag_dat, vars(matches(".gz")),
-               funs(nth(., 2) / (nth(., 1) + nth(., 2))))
-  
-  ag_wide <- ungroup(ag_wide) %>%
-      dplyr::select(-`#chrom`, -pos, -ref) %>% 
-      dplyr::select(edit_site, everything())
-  
-  ag_wide
-}
-
-get_matrix <- function(x) {
-  ag_matrix <- as.data.frame(x)
-  rownames(ag_matrix) <- ag_matrix[, 1]
-  ag_matrix[, 1] <- NULL
-  ag_matrix
-}
-
-
-dat <- clean_and_filter(dat, ref, alt, ref_comp, alt_comp) 
-long_dat <- get_long_data(dat, ref, alt)
-prop_dat <- get_proportion_dat(dat, ref, alt)
-matrix_dat <- get_matrix(prop_dat)
-
-sig_prop_dat <- filter(prop_dat, edit_site %in% brain_site_proportions$edit_site)
-
-all_prop_data <- left_join(sig_prop_dat,
-                           brain_site_proportions, by = "edit_site")
-```
-
-## Make a heatmap instead of scatter plot (too many samples...)
-
-
 ```{r}
-all_prop_mat <- all_prop_data[, -1] %>% as.matrix
-rownames(all_prop_mat) <- pull(all_prop_data, edit_site)
-all_prop_mat <- all_prop_mat * 100 
-
-n_sites <- nrow(all_prop_mat)
-
-## add annotations to pdata 
-
-col_info <- data_frame( "names" = colnames(all_prop_mat)) %>%
-    mutate(simple_names = str_extract(names, "[HBM][0-9]+"))
-col_info <- mutate(col_info,
-                   simple_names = ifelse(str_detect(names, "^[PT]"),
-                                         str_extract(names, "^[PT][0-9DO]+_[HMT3]"),
-                                         simple_names))
-
-other_pdata <- tribble(
-  ~State, ~region, ~sample, ~abbrev_sample,
-   "SA", "Neonate Rostral", "P1_H", "P1_H",
-   "SA", "Neonate Medial", "P1_M", "P1_M",
-   "SA", "Neonate Caudal", "P1_T", "P1_T",
-   "SA", "Testes", "T77D_3", "T77D_3",
-   "SA", "Testes", "T77O_3", "T77O_3")
-        
-
-simple_pdata <-   dplyr::select(pdata, 
-                                State, region, sample, abbrev_sample) %>% 
-  unique() %>% 
-  na.omit()
-
-simple_pdata <- bind_rows(simple_pdata, other_pdata)
-
-simple_pdata <- left_join(col_info, simple_pdata,
-                          by = c("simple_names" = "abbrev_sample")) %>% 
-  dplyr::select(State, region, sample, names) %>% 
-  unique() %>% 
-  na.omit()
-
-
-simple_pdata <- as.data.frame(simple_pdata) %>% 
-    arrange(State)
-
-reordered_cols <- simple_pdata$names %>% unlist()
-
-all_prop_mat <- all_prop_mat[, reordered_cols]
-
-simple_pdata <- dplyr::rename(simple_pdata, 
-                             "Sample Groups" = State,
-                             "Tissue" = region)
-
-# figure out colors
-tissues <- unique(simple_pdata$Tissue) 
-new_tissues <- tissues[!tissues %in% names(region_cols)]
-
-new_cols <- brewer.pal(n = length(tissues), "Set1")
-names(new_cols) <- c(tissues[tissues %in% names(region_cols)],
-                     new_tissues)
-
-new_samples <- simple_pdata %>% filter(!Tissue %in% names(region_cols)) %>% pull(names)
-old_samples <- simple_pdata %>% filter(Tissue %in% names(region_cols)) %>% pull(names)
-
-ha1 <- HeatmapAnnotation(df = filter(simple_pdata,
-                                     names %in% old_samples) %>% 
-                           dplyr::select(`Sample Groups`, 
-                                  `Brain Region` = Tissue), 
-                                    col = list(
-                                        "Sample Groups" = state_cols,
-                                        "Brain Region" = c(region_cols,
-                                                     new_cols)
-                                               ),
-                         annotation_legend_param = list(
-                          "Sample Groups" = list(
-                                        at = state_order, 
-                                        labels = state_order)),
-                         gap = unit(2, "mm"),
-                         annotation_name_side = "left",
-                         annotation_name_offset = unit(1, "mm"))
-
-ha2 <- HeatmapAnnotation(df = filter(simple_pdata,
-                                     names %in% new_samples) %>% 
-                           dplyr::select(`Sample Groups`, 
-                                  `Other Tissues` = Tissue), 
-                                    col = list(
-                                        "Sample Groups" = state_cols,
-                                        "Other Tissues" = c(region_cols,
-                                                     new_cols)
-                                               ),
-                         annotation_legend_param = list(
-                          "Sample Groups" = list(
-                                        at = state_order, 
-                                        labels = state_order)),
-                         gap = unit(2, "mm"),
-                         annotation_name_side = "left",
-                         annotation_name_offset = unit(1, "mm"))
-
-ha3 <- HeatmapAnnotation(df = simple_pdata %>% 
-                           dplyr::select(`Sample Groups`, 
-                                  Tissue), 
-                                    col = list(
-                                        "Sample Groups" = state_cols,
-                                        "Tissue" = c(region_cols,
-                                                     new_cols)
-                                               ),
-                         annotation_legend_param = list(
-                          "Sample Groups" = list(
-                                        at = state_order, 
-                                        labels = state_order)),
-                         gap = unit(2, "mm"),
-                         annotation_name_side = "left",
-                         annotation_name_offset = unit(1, "mm"))
-
-ht1 <- Heatmap(all_prop_mat[, old_samples],
-        show_row_names = FALSE,
-        show_column_names = FALSE,
-        cluster_rows = T,
-        show_row_dend = F,
-        show_column_dend = F,
-        top_annotation = ha1,
-         column_title = "Comparison of editing sites in other tissues",
-        heatmap_legend_param = list(
-          title = "Percent\nEditing (%)"))
-
-ht2 <- Heatmap(all_prop_mat[, new_samples],
-               col = circlize::colorRamp2(c(0, 50, 100), 
-                                          colors = c("blue", "#EEEEEE", "red"), 
-                                          space = "LAB"),
-        show_row_names = FALSE,
-        show_column_names = FALSE,
-        cluster_rows = F,
-        show_row_dend = F,
-        show_column_dend = F,
-        top_annotation = ha2,
-        heatmap_legend_param = list(
-           at = c(0, 20, 40, 60, 80, 100)),
-           show_heatmap_legend = F)
-
-pdf("edits/sig_editing_sites_all_tissues.pdf", 
-    useDingbats = F, width = 8, height = 5)
-
-  draw(ht1 + ht2, annotation_legend_side = "left", 
-     gap = unit(1, "mm"), 
-  #   padding = unit(c(2, 2, 25, 2), 'mm'),
-   heatmap_legend_side = "left", row_dend_side = "left")
-dev.off()
-```
-
-
-```{r}
-
-raw_dat <- read_tsv(file.path("edits", "variant_allele_counts_by_strand","A_G_alleles/A_G_all_sites_raw_counts.txt.gz"))
-
-raw_dat <- filter(raw_dat, edit_site %in% rownames(all_prop_mat)) %>% 
-    ungroup() %>% 
-   dplyr::select(-c(`#chrom`:ref)) 
-
-other_raw_dat <- filter(ungroup(dat), edit_site %in% rownames(all_prop_mat)) %>%
-   dplyr::select(-c(`#chrom`:ref))
-
-count_data <- raw_dat %>% 
-  left_join(other_raw_dat, by = c("edit_site", "base")) %>% 
-  gather(key = "library", value = "counts", -edit_site, -base)
-
-count_data <- count_data %>% 
-  left_join(simple_pdata, by = c("library" = "names"))
-
-# set order
-count_data <- mutate(count_data,
-                     State = factor(`Sample Groups`, levels = state_order))
-
-count_data <- count_data %>% 
-  spread(base, counts)
-
-index_data <- group_by(count_data, State, Tissue) %>% 
-  summarize(editing_index = sum(G) / (sum(A) + sum(G))) %>% 
-  ungroup() 
-  
-
-p <- ggplot(index_data, aes(State, editing_index)) +
-  geom_point(aes(color = Tissue), show.legend = T,
-             size = 0.5) +
-  scale_colour_manual(values = new_cols) +
-  ylab("Editing Index") +
-  theme(axis.title.x = element_blank(),
-        axis.text.x = element_text(size = 12, colour = state_cols),
-        legend.position = "top",
-        legend.title = element_blank())
-
-save_plot("edits/editing_index_across_tissues.pdf", 
-          p, base_aspect_ratio = 1.0)
-```
-
-### Coverage at sig sites
-
-
-```{r}
-n_sig_regions <- group_by(sig_sites, site) %>% 
-  summarize(n = n(),
-            region = str_c(Region, collapse = ",")) %>% 
-  arrange(desc(n))
-
-binned_sites <- map(unique(n_sig_regions$n),
-    ~filter(n_sig_regions, 
-            n == .x) %>% 
-      pull(site))
-
 # get raw counts
 
 regions = c("medulla", "hypothalamus", "brainrest")
@@ -562,6 +224,9 @@ p
 save_plot("edits/read_coverage_vs_n_regions.pdf", 
           p)
 
+file.copy("edits/read_coverage_vs_n_regions.pdf",
+          sfigs_dir[10], overwrite = T)
+
 
 sig_combined_per_region<- mutate(sig_combined_dat, 
                            region_site = ifelse(region_site == "medulla",
@@ -638,6 +303,8 @@ plot(fit,
      main = NULL,
      col = "black")
 dev.off()
+file.copy("edits/gatk_sites_per_region.pdf",
+          sfigs_dir[10], overwrite = T)
 
 set.seed(20171020)
 fit <- eulerr::euler(hyperedited_sites)
@@ -652,6 +319,9 @@ plot(fit,
      main = NULL,
      col = "black")
 dev.off()
+
+file.copy("edits/hyperedited_sites_sites_per_region.pdf",
+          sfigs_dir[10], overwrite = T)
 ```
 
 
@@ -875,6 +545,8 @@ p <- p + theme(strip.text = element_text(size = 9))
 save_plot("edits/tissue_specific_edits.pdf", p, 
           base_height = 6,
           base_width = 8)
+file.copy("edits/tissue_specific_edits.pdf",
+          sfigs_dir[10], overwrite = T)
 ```
 
 
@@ -936,4 +608,6 @@ p <- ggplot(index_data, aes(State, editing_index)) +
 
 save_plot("edits/tissue_specific_editing_index.pdf", p,
           base_height = 5, base_width = 4)
+file.copy("edits/tissue_specific_editing_index.pdf",
+          sfigs_dir[10], overwrite = T)
 ```

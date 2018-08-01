@@ -267,6 +267,8 @@ p <- ggplot(summary_dat, aes(State, mean)) +
   )
  p 
 save_plot("hyperedits/a_vs_g_cpms_average.pdf", p, base_width = 4)
+file.copy("hyperedits/a_vs_g_cpms_average.pdf",
+          figs_dir[6], overwrite = T)
 ```  
 ## Conclusions:
 

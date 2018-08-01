@@ -10,36 +10,36 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 ## Pipeline
-[Snakemake Pipeline](pipeline.html) for aligning data, calling variants, filtering variants and
+[Snakemake Pipeline](../../pipeline.html) for aligning data, calling variants, filtering variants and
 identifying variants that vary by state.
 
 ## RNA-Seq differential expression analysis
   Examine differential gene expression across heterothermic and homothermic states. 
   
-* [QC of the data](mrna-qc.html)
-* [EdgeR Differentiation Expression](mrna-edgeR_de.html)
+* [QC of the data](../../mrna-qc.html)
+* [EdgeR Differentiation Expression](../../mrna-edgeR_de.html)
 
 ## RNA-editing 
   Examine dynamics of RNA editing across heterothermic and homothermic states
   
-* [QC of the identified variants](edits-summary.html)
-* [Heatmaps to visualize editing sites](edits-visualizations.html)
-* [Sequence  features of editing sites](edits-features.html)
-* [Editing site structure](edits-structure.html)
-* [Editing site folding changes by temp](edits-ecs.html)
-* [sanger sequencing at early and later torpor](edits-sanger.html)
-* [comparing anova versus glm](edits-anova-vs-glm.html)
-* [Hyperediting sites](edits-hyperediting.html)
-* [Hyperediting sites conservation](edits-hyperediting-conservation.html)
-* [Hyperediting sites structure](edits-hyperediting-structure.html)
-* [Hyperediting genomic distribution](hyperedits-genomic_distribution.html)
-* [Warm versus cold comparison](edits-warm_v_cold.html)
-* [examine proportion of g containing reads to a](edit-stability.html)
-* [compare IBA to warm non-winter samples](edits-warm-spring-winter.html)
-* [examine differences in editing across brain regions](edits-tissue-comparison)
-* [format data for GEO](edits-geo.html)
+* [QC of the identified variants](../../edits-summary.html)
+* [Heatmaps to visualize editing sites](../../edits-visualizations.html)
+* [Sequence  features of editing sites](../../edits-features.html)
+* [Editing site structure](../../edits-structure.html)
+* [Editing site folding changes by temp](../../edits-ecs.html)
+* [sanger sequencing at early and later torpor](../../edits-sanger.html)
+* [comparing anova versus glm](../../edits-anova-vs-glm.html)
+* [Hyperediting sites](../../edits-hyperediting.html)
+* [Hyperediting sites conservation](../../edits-hyperediting-conservation.html)
+* [Hyperediting sites structure](../../edits-hyperediting-structure.html)
+* [Hyperediting genomic distribution](../../hyperedits-genomic_distribution.html)
+* [Warm versus cold comparison](../../edits-warm_v_cold.html)
+* [examine proportion of g containing reads to a](../../edit-stability.html)
+* [compare IBA to warm non-winter samples](../../edits-warm-spring-winter.html)
+* [examine differences in editing across brain regions](../../edits-tissue-comparison)
+* [format data for GEO](../../edits-geo.html)
 
 ## Correlation between editing, splicing, and Abundance
 
-* [Splicing exploratory data analysis](splicing-eda.html)
-* [Splicing differences, zcchc8](splicing-intron-exon.html)
+* [Splicing exploratory data analysis](../../splicing-eda.html)
+* [Splicing differences, zcchc8](../../splicing-intron-exon.html)
