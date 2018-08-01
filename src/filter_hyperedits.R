@@ -5,9 +5,9 @@ library(stringr)
 library(tidyr)
 library(readr)
 
-project_dir <- path.expand("~/Projects/publication_repos/rnaedits")
+args<-commandArgs(TRUE)
 
-data_dir <- file.path(project_dir, "data")
+data_dir <- args[1]
 
 alleles  <- list(
               "A_to_C",
