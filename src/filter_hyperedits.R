@@ -1,6 +1,13 @@
-source("globals.R")
-
 ## Hyperediting Detection
+library(dplyr)
+library(tidyverse)
+library(stringr)
+library(tidyr)
+library(readr)
+
+project_dir <- path.expand("~/Projects/publication_repos/rnaedits")
+
+data_dir <- file.path(project_dir, "data")
 
 alleles  <- list(
               "A_to_C",
@@ -136,8 +143,8 @@ vcf_out <- dplyr::mutate(vcf_out,
   ungroup() %>% 
   dplyr::select(-c(strand, chrom, end, site_id))
 
-write_tsv(bed_out, file.path(data_dir, "hyperedits/hyperedited_sites.bed"), col_names = T)
-write_tsv(vcf_out, file.path(data_dir, "hyperedits/hyperedited_sites.vcf"), col_names = T)
+write_tsv(bed_out, file.path(data_dir, "hyperedits", "hyperedited_sites.bed"), col_names = T)
+write_tsv(vcf_out, file.path(data_dir, "hyperedits", "hyperedited_sites.vcf"), col_names = T)
 
 
 
