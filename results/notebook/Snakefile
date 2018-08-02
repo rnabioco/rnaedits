@@ -11,7 +11,7 @@ RMDS = [
   "edits-hyperediting-conservation",
   "edits-hyperediting-structure",
   "edits-warm-spring-winter",
-  "edits-tissue-comparison"
+  "edits-tissue-comparison",
   "edits-stability",
   "edits-geo",
   "hyperedits-genomic_distribution",
@@ -52,7 +52,6 @@ rule tissue_comp:
     """
     R -e "rmarkdown::render('{input.rmd}')"
     """
-edits-tissue-comparison
 
 rule geo:
   input:
