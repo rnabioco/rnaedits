@@ -3,7 +3,7 @@
 Pipeline and scripts for detecting A-to-I RNA editing used in the publication:
 
 > Riemondy, K. A., Gillen, A. E., White, E. A., Bogren, L. K., Hesselberth, J. R., & Martin, S. L. (2018). 
-*Dynamic temperature-sensitive A-to-I RNA editing in the brain of a heterothermic mammal during hibernation.* **RNA**. [https://doi.org/10.1261/rna.066522.118]()
+*Dynamic temperature-sensitive A-to-I RNA editing in the brain of a heterothermic mammal during hibernation.* **RNA**. [https://doi.org/10.1261/rna.066522.118](https://doi.org/10.1261/rna.066522.118)
 
 ## UCSC Trackhub
 
