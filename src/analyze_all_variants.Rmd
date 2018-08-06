@@ -458,7 +458,7 @@ names(cpms) <- c("Medulla",
 outprefix <- file.path(prefix, outname, 
                        paste0(ref, "_", alt, "_"))
 
-map2(cpms, names(cpms), ~as.data.frame(.x) %>% 
+walk2(cpms, names(cpms), ~as.data.frame(.x) %>% 
        tibble::rownames_to_column("site") %>% 
        write_tsv(paste0(outprefix, .y, "_normalized_cpms.txt")))
 
