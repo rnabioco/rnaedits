@@ -9,6 +9,9 @@ GATK:
 SNPEFF:
   "/beevol/home/riemondy/bin/snpEff"
 
+PANDOC:
+  "/beevol/home/riemondy/bin/pandoc/"
+
 DATA: 
   "../data"
 

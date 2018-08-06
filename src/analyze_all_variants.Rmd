@@ -11,11 +11,11 @@ output:
     fig_retina: 1 
     code_folding: hide
 params:
-  allele_counts: "../../data/vcf/variant_allele_counts_by_strand/T_G_alleles/counts/"
-  variant_info: "../../data/vcf/variant_allele_counts_by_strand/denovo/per_allele/T_G_alleles/filtered_select_variants.bed.gz"
+  allele_counts: "../data/vcf/variant_allele_counts_by_strand/T_G_alleles/counts/"
+  variant_info: "../data/vcf/variant_allele_counts_by_strand/denovo/per_allele/T_G_alleles/filtered_select_variants.bed.gz"
   ref: "T"
   alt: "G"
-  prefix: "../2017-06-18/variant_allele_counts_by_strand/"
+  prefix: "../results/2018-08-06/variant_allele_counts_by_strand/"
   dirname: "T_G_alleles"
 ---
 
@@ -111,8 +111,6 @@ write_gztsv <- function(df, name, ...){
 ```{r load_in_data}
 ref_comp <- bp_comp(ref)
 alt_comp <- bp_comp(alt)
-# for some unknown reason this previous definition is not recognized when running on tesla. this only
-# took two hours of my life. 
 
 allele_counts_path <- params$allele_counts
 prefix <- params$prefix
@@ -123,16 +121,18 @@ message(params$allele_counts)
 message(params$dirname)
 
 regions = c("medulla", "hypothalamus", "brainrest")
-dat <- map(regions, ~group_dat(paste0(allele_counts_path, .x), ".gz"))
+dat <- map(regions, ~group_dat(file.path(allele_counts_path, .x), ".gz"))
 names(dat) <- regions
 
 
 # write out master table
-system(paste0("mkdir -p ", paste0(prefix, "/", outname, "/")))
+out_dir <- file.path(prefix, outname)
+dir.create(out_dir, recursive = T)
 
 bind_cols <- c('#chrom', "pos", "ref", "base")
 all_variants_export <- Reduce(function(x, y) inner_join(x, y, by = bind_cols), dat)
-write_gztsv(all_variants_export, paste0(prefix, "/", outname, "/all_sites_raw_counts.txt"))
+
+write_gztsv(all_variants_export, file.path(out_dir, "all_sites_raw_counts.txt"))
 ```
 
 ### clean input
@@ -236,14 +236,17 @@ cols <- colnames(all_dat_export)[6:ncol(all_dat_export)]
 all_dat_export <- all_dat_export[,  c(rep(TRUE, 5), !(str_detect(cols, paste(keep_cols, sep ="|"))))] 
 
 
-write_gztsv(all_prop, paste0(prefix, "/", outname, "/", 
-                            ref, "_", alt, "_all_sites_proportions.txt"))
+write_gztsv(all_prop, file.path(prefix, outname, 
+                                paste0(ref, "_", alt,
+                                       "_all_sites_proportions.txt")))
 
-write_gztsv(all_long, paste0(prefix, "/", outname, "/", 
-                            ref, "_", alt, "_all_sites_raw_counts_wide.txt"))
+write_gztsv(all_long, file.path(prefix, outname, 
+                                paste0(ref, "_", alt, 
+                                       "_all_sites_raw_counts_wide.txt")))
 
-write_gztsv(all_dat_export, paste0(prefix, "/", outname, "/", 
-                            ref, "_", alt, "_all_sites_raw_counts.txt"))
+write_gztsv(all_dat_export, file.path(prefix, outname, 
+                                      paste0(ref, "_", alt,
+                                             "_all_sites_raw_counts.txt")))
 
 ```
 
@@ -267,14 +270,17 @@ filtered_prop <- all_prop %>% semi_join(good_variants, by = "edit_site")
 filtered_dat_export <- all_dat_export %>% semi_join(good_variants, by = "edit_site")
 filtered_long <- all_long %>% semi_join(good_variants, by = "edit_site")
 
-write_gztsv(filtered_prop, paste0(prefix, "/", outname, "/", 
-                            ref, "_", alt, "_filtered_sites_proportions.txt"))
+write_gztsv(filtered_prop, file.path(prefix, outname, 
+                                     paste0(ref, "_", alt, 
+                                            "_filtered_sites_proportions.txt")))
 
-write_gztsv(filtered_long, paste0(prefix, "/", outname, "/", 
-                            ref, "_", alt, "_filtered_sites_raw_counts_wide.txt"))
+write_gztsv(filtered_long, file.path(prefix, outname, 
+                                     paste0(ref, "_", alt,
+                                            "_filtered_sites_raw_counts_wide.txt")))
 
-write_gztsv(filtered_dat_export, paste0(prefix, "/", outname, "/", 
-                            ref, "_", alt, "_filtered_sites_raw_counts.txt"))
+write_gztsv(filtered_dat_export, file.path(prefix, outname, 
+                                           paste0(ref, "_", alt,
+                                                 "_filtered_sites_raw_counts.txt")))
 
 long_dat <- map(long_dat,  ~.x %>% semi_join(good_variants, by = "edit_site"))
 prop_dat <- map(prop_dat,  ~.x %>% semi_join(good_variants, by = "edit_site"))
@@ -288,7 +294,7 @@ knitr::kable(data_frame(original_sites = length(all_prop$edit_site),
 
 ```{r get_pdata}
 
-get_groups <- function(matrix_dat, regex_for_fastq, ref_nt, alt_nt, pdata_file = "../../docs/BrainRegionRNAseqLibMetadata.txt") {
+get_groups <- function(matrix_dat, regex_for_fastq, ref_nt, alt_nt, pdata_file = "../docs/BrainRegionRNAseqLibMetadata.txt") {
  # make_groups
   g_names <- colnames(matrix_dat)
   animal_number <- str_extract(g_names, regex_for_fastq)
@@ -319,7 +325,7 @@ pdata_groups <- map2(matrix_dat, regexes, ~get_groups(.x, .y, ref, alt))
 
 ```{r}
 # get # of uniquely mapped reads for library size
-.dir <- file.path("..", "..", "data", "star")
+.dir <- file.path("..", "data", "star")
 star_report_files <- dir(.dir, 
                          pattern = "*_2pass_Log.final.out",
                          recursive = T, full.names = T)
@@ -449,7 +455,8 @@ cpms <- map(edger_objs,
 names(cpms) <- c("Medulla",
                      "Hypothalamus",
                      "Forebrain")
-outprefix <- paste0(prefix, "/", outname, "/", ref, "_", alt, "_")
+outprefix <- file.path(prefix, outname, 
+                       paste0(ref, "_", alt, "_"))
 
 map2(cpms, names(cpms), ~as.data.frame(.x) %>% 
        tibble::rownames_to_column("site") %>% 
@@ -497,7 +504,7 @@ all_data_heatmap_matrix <- format_heatmap_matrix(all_prop_dat)
 ```
 
 ```{r tidy_proportion_data}
-tidy_proportion_data <- function(data_matrix, regex_for_fastq, pdata = "../../docs/BrainRegionRNAseqLibMetadata.txt"){
+tidy_proportion_data <- function(data_matrix, regex_for_fastq, pdata = "../docs/BrainRegionRNAseqLibMetadata.txt"){
   # take matrix of proportions and tidy with sample annotations from pdata table
   dat <- select(data_matrix, matches(".gz"))
   g_names <- colnames(dat)
@@ -678,7 +685,8 @@ tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes,
                       show_row_names = TRUE, 
                       cluster_rows = T)}, error = function(err) print(paste(err, " NA call in heatmap")))
 
-pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "sig_editing_sites_clustered_rnames.pdf"), useDingbats = F)
+pdf(file.path(prefix, outname, paste0(ref, "_", alt, "sig_editing_sites_clustered_rnames.pdf")), 
+    useDingbats = F)
 tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
                       title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
                       pdata_all,
@@ -695,7 +703,9 @@ tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes,
                       show_row_names = TRUE, 
                       cluster_columns = F)}, error = function(err) print(paste(err, " NA call in heatmap")))
 
-pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "sig_editing_sites_not_clustered_rnames.pdf"), useDingbats = F)
+pdf(file.path(prefix, outname, 
+              paste0(ref, "_", alt, "sig_editing_sites_not_clustered_rnames.pdf")),
+    useDingbats = F)
 tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
                       title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
                       pdata_all,
@@ -717,7 +727,9 @@ tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes,
                       show_row_names = FALSE, 
                       cluster_rows = T)}, error = function(err) print(paste(err, " NA call in heatmap")))
 
-pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "sig_editing_sites_clustered.pdf"), useDingbats = F)
+pdf(file.path(prefix, outname, 
+              paste0(ref, "_", alt, "sig_editing_sites_clustered.pdf")), 
+    useDingbats = F)
 tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
                       title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
                       pdata_all,
@@ -734,7 +746,9 @@ tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes,
                       show_row_names = FALSE, 
                       cluster_columns = F)}, error = function(err) print(paste(err, " NA call in heatmap")))
 
-pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "sig_editing_sites_not_clustered.pdf"), useDingbats = F)
+pdf(file.path(prefix, outname, 
+           paste0(ref, "_", alt, "sig_editing_sites_not_clustered.pdf")),
+    useDingbats = F)
 tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
                       title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
                       pdata_all,
@@ -816,11 +830,22 @@ plot_all_sig_genes(prop_dat = long_proportion_dat, toptag_dat = tt_exons_annotat
 exon_sum_tidy <- group_by(long_proportion_dat, site, Region, State) %>%  
   summarize(mean_proportion = mean(proportion, na.rm = T), sd_proportion = sd(proportion, na.rm = T))
 
-write_gztsv(long_proportion_dat, paste0(params$prefix, "/", params$dirname, "/", params$ref, "_", params$alt, "_filtered_sites_proportions_tidy.txt"))
+write_gztsv(long_proportion_dat, 
+            file.path(params$prefix, 
+                      params$dirname, 
+                      paste0(params$ref, "_", params$alt,
+                             "_filtered_sites_proportions_tidy.txt")))
 
-write_gztsv(exon_sum_tidy, paste0(params$prefix, "/", params$dirname, "/", params$ref, "_", params$alt, "_mean_editing.txt"))
+write_gztsv(exon_sum_tidy, 
+            file.path(params$prefix, 
+                      params$dirname, 
+                      paste0(params$ref, "_", params$alt, "_mean_editing.txt")))
 
-write_gztsv(tt_exons_annotated, paste0(params$prefix, "/", params$dirname,  "/", params$ref, "_", params$alt, "_filtered_sites_annotation.txt"))
+write_gztsv(tt_exons_annotated,
+            file.path(params$prefix, 
+                      params$dirname, 
+                      paste0(params$ref, "_", params$alt,
+                             "_filtered_sites_annotation.txt")))
 
 ```
 
@@ -859,7 +884,9 @@ tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes,
                       show_row_names = TRUE, 
                       cluster_rows = T)}, error = function(err) print(paste(err, " NA call in heatmap")))
 
-pdf(paste0(prefix, "/", outname,  "/", ref, "_", alt, "impactful_sig_editing_sites_clustered_rnames.pdf"), useDingbats = F)
+pdf(file.path(prefix, outname,  
+              paste0(ref, "_", alt, "impactful_sig_editing_sites_clustered_rnames.pdf")), 
+    useDingbats = F)
 tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
                       title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
                       pdata_all,
@@ -876,7 +903,9 @@ tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes,
                       show_row_names = TRUE, 
                       cluster_columns = F)}, error = function(err) print(paste(err, " NA call in heatmap")))
 
-pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "impactful_sig_editing_sites_not_clustered_rnames.pdf"), useDingbats = F)
+pdf(file.path(prefix, outname, 
+              paste0(ref, "_", alt, "impactful_sig_editing_sites_not_clustered_rnames.pdf")), 
+    useDingbats = F)
 tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
                       title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
                       pdata_all,
@@ -894,7 +923,8 @@ tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes,
                       show_row_names = FALSE, 
                       cluster_rows = T)}, error = function(err) print(paste(err, " NA call in heatmap")))
 
-pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "impactful_sig_editing_sites_clustered.pdf"), useDingbats = F)
+pdf(file.path(prefix, outname, 
+           paste0(ref, "_", alt, "impactful_sig_editing_sites_clustered.pdf")), useDingbats = F)
 tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
                       title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
                       pdata_all,
@@ -911,7 +941,9 @@ tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes,
                       show_row_names = FALSE, 
                       cluster_columns = F)}, error = function(err) print(paste(err, " NA call in heatmap")))
 
-pdf(paste0(prefix, "/", outname, "/", ref, "_", alt, "impactful_sig_editing_sites_not_clustered.pdf"), useDingbats = F)
+pdf(file.path(prefix, outname, 
+              paste0(ref, "_", alt, "impactful_sig_editing_sites_not_clustered.pdf")), 
+    useDingbats = F)
 tryCatch({get_sig_heatmap(all_sites, all_prop_dat_genes, 
                       title = paste0("Significant ", ref, "->", alt, " SNVs \n n = "), 
                       pdata_all,
@@ -928,11 +960,23 @@ tryCatch(print(p), error = function(e) print(paste(e, " not enough sig sites to 
 exon_sum_tidy <- group_by(long_proportion_dat, site, Region, State) %>%  
   summarize(mean_proportion = mean(proportion, na.rm = T), sd_proportion = sd(proportion, na.rm = T))
 
-write_gztsv(long_proportion_dat, paste0(params$prefix, "/", params$dirname, "/", params$ref, "_", params$alt, "_impactful_sites_proportions_tidy.txt"))
+write_gztsv(long_proportion_dat, 
+            file.path(params$prefix, 
+                      params$dirname, 
+                      paste0(params$ref, "_", params$alt,
+                             "_impactful_sites_proportions_tidy.txt")))
 
-write_gztsv(exon_sum_tidy, paste0(params$prefix, "/", params$dirname, "/", params$ref, "_", params$alt, "_impactful_mean_editing.txt"))
+write_gztsv(exon_sum_tidy, 
+            file.path(params$prefix, 
+                      params$dirname, 
+                      paste0(params$ref, "_", params$alt,
+                             "_impactful_mean_editing.txt")))
 
-write_gztsv(impact_exons_annotated, paste0(params$prefix, "/", params$dirname, "/", params$ref, "_", params$alt, "_impactful_sites_annotation.txt"))
+write_gztsv(impact_exons_annotated, 
+            file.path(params$prefix, 
+                      params$dirname, 
+                      paste0(params$ref, "_", params$alt,
+                             "_impactful_sites_annotation.txt")))
 
 
 ```

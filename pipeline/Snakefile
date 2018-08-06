@@ -1,6 +1,7 @@
 shell.executable("/bin/bash")
 shell.prefix("source ~/.bash_profile; ")
 import os
+import datetime
 """ Snakemake pipeline for RNA editing detection from RNA-Seq data """
 
 configfile: "config.yaml"
@@ -15,6 +16,7 @@ DOCS = "../docs"
 PICARD = config["PICARD"]
 GATK = config["GATK"]
 SNPEFF = config["SNPEFF"]
+PANDOC = config["PANDOC"]
 TRANSCRIPTS = config["TRANSCRIPTS"]
 GENOME = config["GENOME"]
 GENOME_DIR = config["GENOME_DIR"]
@@ -23,7 +25,7 @@ FASTQ = config["FASTQ"]
 CHROM_SIZES = config["CHROM_SIZES"]
 POS_REF = config["pos_ref"]
 POS_ALT = config["pos_alt"]
-RESULT_DATE = ["2017-06-07"]
+RESULT_DATE = ["2018-08-06"]
 VARIANT_TYPES = ["variant_allele_counts_by_strand"]
 FQ_BASENAME = [os.path.basename(x) for x in FASTQ]
 
