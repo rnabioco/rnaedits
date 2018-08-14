@@ -3,7 +3,7 @@ shell.prefix("source ~/.bash_profile; ")
 import os
 """ Snakemake pipeline for RNA editing detection from RNA-Seq data """
 
-configfile: "config.yaml"
+configfile: "config_hyperediting.yaml"
   
 DATA = config["DATA"]
 
@@ -12,6 +12,7 @@ DBASES = "../dbases"
 RESULTS = "../results"
 DOCS = "../docs"
 
+SNPEFF = config["SNPEFF"]
 TRANSCRIPTS = config["TRANSCRIPTS"]
 GENOME = config["GENOME"]
 GENOME_DIR = config["GENOME_DIR"]
@@ -68,3 +69,4 @@ rule all:
       data = DATA)
 
 include: "rules/hyperediting.snake"
+

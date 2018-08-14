@@ -26,13 +26,15 @@ rule annotate_hypersites:
   add annotations to sites
   """
   input:
-    gatk_vcf = "{data}/vcf/variant_allele_counts_by_strand/annotated_variants.vcf.gz"
+    gatk_vcf =
+    "{data}/vcf/variant_allele_counts_by_strand/annotated_variants.vcf.gz",
     hyper_vcf = "{data}/hyperedits/hyperedited_sites.vcf",
     hyper_bed = "{data}/hyperedits/hyperedited_sites.bed",
   output:
     "{data}/hyperedits/hyperedited_sites_annotated.bed.gz"
   params:
     hedit_dir = "{data}/hyperedits/",
+    annotation = ANNOTATION_DIR + "header_lines.txt", # from standard GATK pipeline
     job_name = "annotate_alleles",
     memory = "select[mem>16] rusage[mem=16]",
   log: "{data}/hyperedits/logs/annotate_bed.txt"
@@ -43,13 +45,16 @@ rule annotate_hypersites:
   resources: all_threads=1
   shell:
     """
+    module load htslib
+    module load bcftools
+
     zgrep "^##" {input.gatk_vcf} \
         | cat - {input.hyper_vcf} \
         | bgzip -c > {params.hedit_dir}"out.vcf.gz"
     
     bcftools annotate -a {DBASES}/denovo_annotation/gtf_transcripts.bed.gz \
         -c CHROM,FROM,TO,-,-,-,DENOVO_GENE_ID,BIOTYPE,TRANSCRIPT_ID,GENE_ID,GENE_NAME,DENOVO_TRANSCRIPT_ID,EXON_NUMBER,REGION,ANNOTATED \
-        -h {DBASES}/denovo_annotation/header_lines.txt \
+        -h {params.annotation} \
         -i 'FILTER == "PASS"' -O z -o {params.hedit_dir}"tmp.vcf.gz" {params.hedit_dir}"out.vcf.gz"
     
     java -Xmx4g -jar {SNPEFF}/snpEff.jar ann \
@@ -122,7 +127,9 @@ rule filter_edits:
       read = ["1", "2"]),
   output:
     variants = "{data}/hyperedits/hyperedited_sites.vcf",
+    bed = "{data}/hyperedits/hyperedited_sites.bed",
   params:
+    data_dir = "{data}",
     job_name = "filter_hyperedits",
     memory = "select[mem>5] rusage[mem=5]",
   log:
@@ -131,7 +138,8 @@ rule filter_edits:
   message: "filtering hyperedits"
   shell:
     """
-    R -e 'source("{LIB}/filter_hyperedits.R", chdir = T)'
+    Rscript {LIB}/filter_hyperedits.R \
+      {params.data_dir}
     """
 
 rule keep_paired_edits:

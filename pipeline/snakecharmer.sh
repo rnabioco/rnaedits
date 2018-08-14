@@ -17,3 +17,9 @@ snakemake --drmaa "$args" \
     --rerun-incomplete \
     --configfile config.yaml 
   
+snakemake --drmaa "$args" \
+    --snakefile hyperediting.snake\
+    --jobs 72 \
+    --resources all_threads=72 \
+    --latency-wait 50 \
+    --rerun-incomplete 

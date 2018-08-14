@@ -24,7 +24,7 @@ UCSC website
 ## Pipelines used to detect RNA editing
 
 A snakemake pipeline was used to run a pipeline to detect A-to-I editing
-events. This pipeline requies a cluster to run all of the steps, and is
+events. This pipeline requires a cluster to run all of the steps, and is
 provided in the `pipeline` directory. 
 
 ## Rmarkdown documents used to generate figures
